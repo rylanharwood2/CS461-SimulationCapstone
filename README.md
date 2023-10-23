@@ -2,8 +2,6 @@
 
 ## Project Structure
 
-Inside of your repository, you'll see the following folders and files:
-
 ```text
 .
 ├── docs/
