@@ -12,8 +12,8 @@
 └── README.md
 ```
 
-The `docs/` directory hold documentations
+The `docs/` directory holds documentations
 
-The `src/` directory will contain your codebase.
+The `src/` directory contains codebase.
 
-The `wip/` directory is your Work in Progress directory. It contains assignment templates that you will modify/update during the year. You can add more files there that support your project (e.g., diagrams, design files, documents, reviews, progress reports, etc.)
+The `wip/` directory contains assignment templates that we will modify/update during the year. You can add more files there that support your project (e.g., diagrams, design files, documents, reviews, progress reports, etc.)
