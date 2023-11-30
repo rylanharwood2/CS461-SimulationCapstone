@@ -117,16 +117,16 @@ fn player_move(
                     _ => {
                         let key = *key;
                         if key == key_bindings.move_forward {
-                            pitch += ((settings.sensitivity*6.0) * window_scale).to_radians();
+                            pitch += ((settings.sensitivity*3.0) * window_scale).to_radians();
                             transform.rotation = Quat::from_axis_angle(Vec3::Y, yaw) * Quat::from_axis_angle(Vec3::X, pitch);
                         } else if key == key_bindings.move_backward {
-                            pitch -= ((settings.sensitivity*6.0) * window_scale).to_radians();
+                            pitch -= ((settings.sensitivity*3.0) * window_scale).to_radians();
                             transform.rotation = Quat::from_axis_angle(Vec3::Y, yaw) * Quat::from_axis_angle(Vec3::X, pitch);
                         } else if key == key_bindings.move_left { //change to rotate yaw negative
-                            yaw += ((settings.sensitivity*6.0) * window_scale).to_radians();
+                            yaw += ((settings.sensitivity*3.0) * window_scale).to_radians();
                             transform.rotation = Quat::from_axis_angle(Vec3::Y, yaw) * Quat::from_axis_angle(Vec3::X, pitch);
                         } else if key == key_bindings.move_right { //change to rotate yaw positive
-                            yaw -= ((settings.sensitivity*6.0) * window_scale).to_radians();
+                            yaw -= ((settings.sensitivity*3.0) * window_scale).to_radians();
                             transform.rotation = Quat::from_axis_angle(Vec3::Y, yaw) * Quat::from_axis_angle(Vec3::X, pitch);
                         } else if key == key_bindings.move_ascend {
                             velocity += forward;

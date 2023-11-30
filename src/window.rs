@@ -9,7 +9,6 @@ impl Plugin for Window {
         app.add_plugins(DefaultPlugins.set(WindowPlugin{
             primary_window: Some(bevy::window::Window{
                 title: "cs461-SimulationCapstone".to_string(),
-                cursor: Cursor{icon: CursorIcon::Default, visible: true, grab_mode: bevy::window::CursorGrabMode::Confined, hit_test:true },
                 resolution: (1920 as f32, 1080 as f32).into(),
                 present_mode: bevy::window::PresentMode::AutoNoVsync,
                 mode: bevy::window::WindowMode::Windowed,
