@@ -21,6 +21,9 @@ fn main() {
             scene::setup,
             scene::setup_terrain
         ))
+        .add_systems(Update, 
+            scene::generate_chunks_update
+        )
         .run();
 }
 
