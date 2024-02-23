@@ -18,6 +18,11 @@ struct InputState {
 pub struct MovementSettings {
     pub sensitivity: f32,
     pub speed: f32,
+    pub accel: f32,
+    pub decel: f32,
+    pub accel_max: f32,
+    pub decel_min: f32,
+    pub velocity: Vec3,
 }
 
 impl Default for MovementSettings {
@@ -25,9 +30,15 @@ impl Default for MovementSettings {
         Self {
             sensitivity: 0.0005,
             speed: 12.,
+            accel: 0.0,
+            decel: 0.0,
+            accel_max: 1.0,
+            decel_min: -1.0,
+            velocity: Vec3::ZERO,
         }
     }
 }
+
 
 /// Key configuration
 #[derive(Resource)]
@@ -99,22 +110,23 @@ fn player_move(
     keys: Res<Input<KeyCode>>,
     time: Res<Time>,
     primary_window: Query<&Window, With<PrimaryWindow>>,
-    settings: Res<MovementSettings>,
+    mut settings: ResMut<MovementSettings>,
     key_bindings: Res<KeyBindings>,
     mut query: Query<(&FlyCam, &mut Transform)>, //    mut query: Query<&mut Transform, With<FlyCam>>,
 ) {
     if let Ok(window) = primary_window.get_single() {
         for (_camera, mut transform) in query.iter_mut() {
-            let mut velocity = Vec3::ZERO;
             let local_z = transform.local_z();
             let forward = -Vec3::new(local_z.x, local_z.y, local_z.z);
             let (mut yaw, mut pitch, _) = transform.rotation.to_euler(EulerRot::YXZ);
+            //let gravity: f32 = 9.81;
             //let right = Vec3::new(local_z.z, 0., -local_z.x);
             let window_scale = window.height().min(window.width());
             for key in keys.get_pressed() {
                 match window.cursor.grab_mode {
                     CursorGrabMode::None => (),
                     _ => {
+                        settings.velocity=Vec3::ZERO;
                         let key = *key;
                         if key == key_bindings.move_forward {
                             pitch += ((settings.sensitivity*3.0) * window_scale).to_radians();
@@ -129,16 +141,40 @@ fn player_move(
                             yaw -= ((settings.sensitivity*3.0) * window_scale).to_radians();
                             transform.rotation = Quat::from_axis_angle(Vec3::Y, yaw) * Quat::from_axis_angle(Vec3::X, pitch);
                         } else if key == key_bindings.move_ascend {
-                            velocity += forward;
+                            settings.velocity += forward;
+                            settings.accel = settings.accel + 0.001;
+                            settings.decel = 1.0;
+                            if settings.accel <= 0.0{
+                                settings.accel = f32::max(settings.decel_min,settings.accel);
+                            }
+                            else{
+                                settings.accel = f32::min(settings.accel_max,settings.accel);
+                            }
+                            
                         } else if key == key_bindings.move_descend {
-                            velocity -= forward;
+                            settings.velocity -= forward;
+                            settings.decel = -1.0;
+                            settings.accel = settings.accel- 0.001;
+                            settings.accel= f32::max(settings.decel_min,settings.accel);
                         }
+                        
                     }
                 }
 
-                velocity = velocity.normalize_or_zero();
+                settings.velocity = settings.velocity.normalize_or_zero();
+                //transform.translation += settings.velocity * time.delta_seconds() * settings.speed * (settings.accel) * (settings.decel)
+            }
 
-                transform.translation += velocity * time.delta_seconds() * settings.speed
+            //decelerates to a stop naturally given no inputs (also runs during inputs technically but has minimal effect)
+            if(settings.accel > 0.0){
+                settings.accel = settings.accel-0.00035;
+                settings.velocity = settings.velocity.normalize_or_zero();
+                transform.translation += settings.velocity * time.delta_seconds() * settings.speed * (settings.accel) * (settings.decel)
+            }
+            else if (settings.accel < 0.0){
+                settings.accel = settings.accel+0.00035;
+                settings.velocity = settings.velocity.normalize_or_zero();
+                transform.translation += settings.velocity * time.delta_seconds() * settings.speed * (settings.accel) * (settings.decel)
             }
         }
     } else {
