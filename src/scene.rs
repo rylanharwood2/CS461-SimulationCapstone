@@ -26,9 +26,9 @@ const INITIAL_HM_PATH: &str = "./assets/images/terrainhm.png";
 const HM_HEIGHT: f32 = 30.0;
 
 //Chunk generation settings
-static CHUNK_SIZE: f32 = 400.0;          
+static CHUNK_SIZE: f32 = 100.0;          
 static CHUNK_RES: usize = 256;              //todo: have low resolution meshed along with high resolution meshes
-static CHUNK_VIEW_DISTANCE: u32 = 8;        //todo: make this mutable
+static CHUNK_VIEW_DISTANCE: u32 = 32;        //todo: make this mutable
 
 //Used for chunk entity world placement
 static mut CREATED_CHUNKS: Vec<Chunk> = Vec::new();     //represents created chunks
@@ -53,14 +53,13 @@ pub fn setup(
     asset_server: Res<AssetServer>,
 ) {
     let cascade_shadow_config = CascadeShadowConfigBuilder {
-        first_cascade_far_bound: 0.3,
-        maximum_distance: 3.0,
+        first_cascade_far_bound: 2.0,
+        maximum_distance: 300.0,
         ..default()
     }
     .build();
 
     // light
-    //copied from https://bevyengine.org/examples/3D%20Rendering/atmospheric-fog/
     commands.spawn((
         Sun{},
         DirectionalLightBundle {
@@ -71,7 +70,7 @@ pub fn setup(
                 ..default()
             },
             cascade_shadow_config,
-            transform: Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -1.309, 0., 0.)),
+            transform: Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.610865, 0., 0.)),
             ..default()
         }
     ));
