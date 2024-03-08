@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use bevy::render::mesh::{Indices};
 use image::{DynamicImage, GenericImageView};
 use std::borrow::Borrow;
+use std::string;
 use std::{path::Path};
 use CS461_SimulationCapstone::FlyCam;
 use std::collections::HashMap;
@@ -17,10 +18,13 @@ struct Chunk{
     entity: Entity,
 }
 
+const INITIAL_HM_PATH: &str = "./assets/images/terrainhm.png";
+const HM_HEIGHT: f32 = 30.0;
+
 //Chunk generation settings
-static CHUNK_SIZE: f32 = 50.0;          
+static CHUNK_SIZE: f32 = 400.0;          
 static CHUNK_RES: usize = 256;              //todo: have low resolution meshed along with high resolution meshes
-static CHUNK_VIEW_DISTANCE: u32 = 16;        //todo: make this mutable
+static CHUNK_VIEW_DISTANCE: u32 = 8;        //todo: make this mutable
 
 //Used for chunk entity world placement
 static mut CREATED_CHUNKS: Vec<Chunk> = Vec::new();     //represents created chunks
@@ -131,7 +135,7 @@ fn generate_terrain_chunk(path: &str) -> Mesh{
 	let image_path = path; // Replace with the path to your image file
 	let img = image::open(&Path::new(image_path)).unwrap();
 
-	let (vertices, normals, indices) = generate_quad(img, chunk_size, n, chunk_size);
+	let (vertices, normals, indices) = generate_quad(img, chunk_size, n, HM_HEIGHT);
 	let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
 	let indi = Indices::U32(indices);
 	mesh.set_indices(Some(indi));
@@ -254,7 +258,7 @@ pub fn generate_pre_chunks(
     //lets create a whole bunch of chunks
     unsafe{
         //generate chunk based on image file
-        let new_mesh = generate_terrain_chunk("D:\\joshu\\Downloads\\Mountain Range 8k Height Map\\Mountain Range 8k Height Map\\Mountain Range Height Map PNG low.png");
+        let new_mesh = generate_terrain_chunk(INITIAL_HM_PATH);
         
         let mesh_handle = meshes.add(new_mesh.clone());
 
