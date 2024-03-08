@@ -21,9 +21,10 @@ fn main() {
             scene::setup,
             scene::generate_pre_chunks
         ))
-        .add_systems(Update, 
-            scene::generate_chunks_update
-        )
+        .add_systems(Update, (
+            scene::generate_chunks_update,
+            scene::update_sky_box
+        ))
         .run();
 }
 

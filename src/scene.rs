@@ -1,7 +1,7 @@
-use bevy::ecs::entity;
+use bevy::core_pipeline::Skybox;
 use bevy::math::vec3;
+use bevy::render::mesh::shape::Cube;
 use bevy::{render::render_resource::PrimitiveTopology};
-use bevy::prelude::*;
 use bevy::render::mesh::{Indices};
 use image::{DynamicImage, GenericImageView};
 use std::borrow::Borrow;
@@ -10,6 +10,10 @@ use std::{path::Path};
 use CS461_SimulationCapstone::FlyCam;
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
+use bevy::{
+    pbr::{CascadeShadowConfigBuilder, NotShadowCaster},
+    prelude::*,
+};
 
 #[derive(Copy, Clone)]
 struct Chunk{
@@ -38,21 +42,56 @@ static mut CHUNK_LOCATION_CACHE: Lazy<HashMap<String, Mesh>> = Lazy::new(|| {
 static mut FLAT_PLANE_CREATED: bool = false;
 static mut FLAT_PLANE_MESH: Option<Mesh> = None;
 
+#[derive(Component)]
+pub struct SkyBoxComponent {}
+#[derive(Component)]
+pub struct Sun {}
 pub fn setup(
     mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
 ) {
+    let cascade_shadow_config = CascadeShadowConfigBuilder {
+        first_cascade_far_bound: 0.3,
+        maximum_distance: 3.0,
+        ..default()
+    }
+    .build();
+
     // light
-    commands.spawn(DirectionalLightBundle {
-        directional_light: DirectionalLight{
-            color: Color::Rgba { red: (1.0), green: (1.0), blue: (1.0), alpha: (1.0) },
-            illuminance: 10000.0,
-            shadows_enabled: true,
-            ..Default::default()
+    //copied from https://bevyengine.org/examples/3D%20Rendering/atmospheric-fog/
+    commands.spawn((
+        Sun{},
+        DirectionalLightBundle {
+            directional_light: DirectionalLight{
+                color: Color::Rgba { red: (1.0), green: (1.0), blue: (1.0), alpha: (1.0) },
+                illuminance: 10000.0,
+                shadows_enabled: true,
+                ..default()
+            },
+            cascade_shadow_config,
+            transform: Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -1.309, 0., 0.)),
+            ..default()
+        }
+    ));
+
+    commands.spawn((
+        SkyBoxComponent{},
+        PbrBundle {
+            mesh: meshes.add(Cube::new(1000.0).into()),
+            material: materials.add(StandardMaterial {
+                base_color: Color::hex("888888").unwrap(),
+                unlit: true,
+                cull_mode: None,
+                ..default()
+            }),
+            transform: Transform::from_scale(Vec3::splat(20.0)),
+            ..default()
         },
-        transform: Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -1.2, -1.2, 0.)),
-        ..Default::default()
-    });
-    
+        NotShadowCaster,
+    ));
+
     info!("Move camera around by using WASD for lateral movement");
     info!("Use Left Shift and Spacebar for vertical movement");
     info!("Use the mouse to look around");
@@ -84,7 +123,7 @@ fn compute_world_space_normal(height_map: &DynamicImage, x: u32, y: u32) -> Vec3
 
     let normal = va.cross(vb);
 
-    let world_normal = Vec3::new(normal.x, normal.z, normal.y);
+    let world_normal = Vec3::new(-normal.x, normal.z, -normal.y);
 
     // Normalize the normal vector
     world_normal.normalize()
@@ -266,6 +305,13 @@ pub fn generate_pre_chunks(
         for i in 0..(CHUNK_VIEW_DISTANCE * CHUNK_VIEW_DISTANCE){
             let new_transform = Transform::from_translation(vec3(0.0, 0.0, 0.0));
 
+            let mut mat = StandardMaterial::default();
+            mat.perceptual_roughness = 0.5;
+            mat.metallic = 0.0;
+            mat.base_color = Color::rgb(1.0, 1.0, 1.0);
+            mat.emissive = Color::rgb(0.0, 0.0, 0.0);
+            mat.fog_enabled = true;
+
             //create entity
             let chunk_entity = 
             commands.spawn((
@@ -274,7 +320,7 @@ pub fn generate_pre_chunks(
                 PbrBundle{
                     mesh: mesh_handle.clone(),
                     transform: new_transform,
-                    material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
+                    material: materials.add(mat),
                     ..Default::default()
                 }
             )).id();
@@ -337,8 +383,7 @@ pub fn generate_chunks_update(camera_query: Query<(&FlyCam, &Transform), Without
 
         let item = camera_query.iter().nth(0);
         let d = item.expect("no camera found!");
-        let camera = d.0;
-        let camera_transform = d.1;
+        let camera_transform = *d.1;
 
         let position = camera_transform.translation;
         let cp = get_chunk_space_position(position);
@@ -412,4 +457,26 @@ pub fn generate_chunks_update(camera_query: Query<(&FlyCam, &Transform), Without
 
     }
 
+}
+pub fn update_sky_box(
+    camera_query: Query<&Transform, (With<FlyCam>, Without<SkyBoxComponent>, Without<Sun>)>, 
+    mut skybox: Query<&mut Transform, (With<SkyBoxComponent>, Without<Sun>)>,
+    mut sun: Query<&mut Transform, With<Sun>>,
+    ){
+
+    if camera_query.is_empty() {
+        println!("cannot find camera!");
+        return;
+    }
+    if skybox.is_empty() {
+        println!("cannot find skybox!");
+        return;
+    }
+
+    let camera = camera_query.single();
+    let mut skybox: Mut<'_, Transform> = skybox.single_mut();
+    // let mut sunt = sun.single_mut();
+    // let eu = sunt.rotation.to_euler(EulerRot::XYZ);
+    // sunt.rotation = Quat::from_euler(EulerRot::XYZ, eu.0 + 0.001, 0.5, eu.2);
+    skybox.translation = camera.translation;
 }
