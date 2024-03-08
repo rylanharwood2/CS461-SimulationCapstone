@@ -19,7 +19,7 @@ fn main() {
         })
         .add_systems(Startup, (
             scene::setup,
-            scene::setup_terrain
+            scene::generate_pre_chunks
         ))
         .add_systems(Update, 
             scene::generate_chunks_update

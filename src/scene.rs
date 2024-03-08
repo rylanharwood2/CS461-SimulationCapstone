@@ -1,21 +1,32 @@
-use bevy::{ecs::system::EntityCommand, render::render_resource::PrimitiveTopology};
+use bevy::ecs::entity;
+use bevy::math::vec3;
+use bevy::{render::render_resource::PrimitiveTopology};
 use bevy::prelude::*;
-use bevy::render::mesh::Indices;
-use image::{DynamicImage, FlatSamples, GenericImageView, Pixel};
-use std::{path::Path, vec};
+use bevy::render::mesh::{Indices};
+use image::{DynamicImage, GenericImageView};
+use std::borrow::Borrow;
+use std::{path::Path};
 use CS461_SimulationCapstone::FlyCam;
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
+
+#[derive(Copy, Clone)]
 struct Chunk{
     position: Vec3,
     remove_flag: bool,
     entity: Entity,
 }
 
-static mut CHUNK_SIZE: f32 = 25.0;
-static mut CHUNK_RES: usize = 128;
-static mut CHUNK_VIEW_DISTANCE: u32 = 8;
-static mut OPEN_CHUNKS: Vec<Chunk> = Vec::new();
+//Chunk generation settings
+static CHUNK_SIZE: f32 = 50.0;          
+static CHUNK_RES: usize = 256;              //todo: have low resolution meshed along with high resolution meshes
+static CHUNK_VIEW_DISTANCE: u32 = 16;        //todo: make this mutable
+
+//Used for chunk entity world placement
+static mut CREATED_CHUNKS: Vec<Chunk> = Vec::new();     //represents created chunks
+static mut NULL_CHUNKS: Vec<Chunk> = Vec::new();        //represents null chunks
+
+//Used for mesh generation (won't need after pre generation, todo: remove)
 static mut CHUNK_LOCATION_CACHE: Lazy<HashMap<String, Mesh>> = Lazy::new(|| {
     let map = HashMap::new();
     map
@@ -232,17 +243,47 @@ fn generate_quad_empty(world_size: f32, n: usize) -> (Vec<Vec3>, Vec<Vec3>, Vec<
     (vertices, normals, indices)
 }
 
-pub fn setup_terrain(    
+#[derive(Component)]
+pub struct ChunkComponent{}
+
+pub fn generate_pre_chunks(    
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    asset_server: Res<AssetServer>){
-	// let mesh = generate_terrain_chunk("D:\\joshu\\Downloads\\Mountain Range 8k Height Map\\Mountain Range 8k Height Map\\Mountain Range Height Map PNG low.png");
-	// let entity = commands.spawn(PbrBundle {
-    //     mesh: meshes.add(mesh),
-    //     material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
-    //     ..default()
-    // }).id();
+){
+    //lets create a whole bunch of chunks
+    unsafe{
+        //generate chunk based on image file
+        let new_mesh = generate_terrain_chunk("D:\\joshu\\Downloads\\Mountain Range 8k Height Map\\Mountain Range 8k Height Map\\Mountain Range Height Map PNG low.png");
+        
+        let mesh_handle = meshes.add(new_mesh.clone());
+
+        //generate chunk entities
+        for i in 0..(CHUNK_VIEW_DISTANCE * CHUNK_VIEW_DISTANCE){
+            let new_transform = Transform::from_translation(vec3(0.0, 0.0, 0.0));
+
+            //create entity
+            let chunk_entity = 
+            commands.spawn((
+                //tag this entity as a chunk with chunk component
+                ChunkComponent{},
+                PbrBundle{
+                    mesh: mesh_handle.clone(),
+                    transform: new_transform,
+                    material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
+                    ..Default::default()
+                }
+            )).id();
+
+            //save entity, transform, position, and flag
+            NULL_CHUNKS.push(Chunk{
+                position: vec3(0.0, 0.0, 0.0),
+                remove_flag: false,
+                entity: chunk_entity,
+            })
+        }
+        println!("created {num} chunks", num = CHUNK_VIEW_DISTANCE * CHUNK_VIEW_DISTANCE);
+    }
 }
 
 fn get_chunk_space_position(position: Vec3) -> Vec3{
@@ -267,11 +308,11 @@ fn get_world_space_position(position: Vec3) -> Vec3{
     }
     Vec3::new(x, y, z)
 }
-fn is_in_open_chunks(position: Vec3) -> (bool, usize){
+fn chunk_exists(position: Vec3) -> (bool, usize){
     let mut isit: bool = false;
     let mut index: usize = 0;
     unsafe{
-        for chunks in OPEN_CHUNKS.iter() {
+        for chunks in CREATED_CHUNKS.iter() {
             if chunks.position == position{
                 isit = true;
                 break;
@@ -282,72 +323,89 @@ fn is_in_open_chunks(position: Vec3) -> (bool, usize){
     return (isit, index);
 }
 
-pub fn generate_chunks_update(mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    asset_server: Res<AssetServer>,
-    mut query: Query<(&FlyCam, &mut Transform)>)
-    {
+pub fn generate_chunks_update(camera_query: Query<(&FlyCam, &Transform), Without<ChunkComponent>>, mut chunk_query: Query<(Entity, &mut Transform), With<ChunkComponent>>){
     unsafe{
 
-        for chunks in OPEN_CHUNKS.iter_mut() {
+        //go through every created chunks and mark them as destroy
+        for chunks in CREATED_CHUNKS.iter_mut() {
             chunks.remove_flag = true;
         }
 
-        for (_camera, transform) in query.iter() {
-            let position = transform.translation;
-            let cp = get_chunk_space_position(position);
+        let item = camera_query.iter().nth(0);
+        let d = item.expect("no camera found!");
+        let camera = d.0;
+        let camera_transform = d.1;
+
+        let position = camera_transform.translation;
+        let cp = get_chunk_space_position(position);
     
-            let half_chunk = (CHUNK_VIEW_DISTANCE as f32 * 0.5).ceil() as i32;
+        let half_chunk = (CHUNK_VIEW_DISTANCE as f32 * 0.5).ceil() as i32;
+        let mut chunks_to_create: Vec<Vec3> = Vec::new();
 
-            //loop through chunk box
-            for x in 0..(CHUNK_VIEW_DISTANCE + 1) {
-                for y in 0..(CHUNK_VIEW_DISTANCE + 1) {
-                    let cur_x = (x as i32 - half_chunk) as f32 + cp.x;
-                    let cur_y = (y as i32 - half_chunk) as f32 + cp.z;
-                    let cur_chunk_pos = Vec3::new(cur_x, 0.0, cur_y);
-                    let (exists, index) = is_in_open_chunks(cur_chunk_pos);
+        //loop through chunk box
+        for x in 0..(CHUNK_VIEW_DISTANCE) {
+            for y in 0..(CHUNK_VIEW_DISTANCE) {
+                let cur_x = (x as i32 - half_chunk) as f32 + cp.x;
+                let cur_y = (y as i32 - half_chunk) as f32 + cp.z;
+                let cur_chunk_pos = Vec3::new(cur_x, 0.0, cur_y);
+                let (exists, index) = chunk_exists(cur_chunk_pos);
 
-                    //check if this chunk already exists
-                    if exists {
-                        //if it does reset remove flag
-                        OPEN_CHUNKS[index].remove_flag = false;
-                    }
-                    else{
-                        //else create new chunk and cache it
-                        println!("Creating new chunk at {}", cur_chunk_pos);
-                        let mesh = generate_terrain_chunk("D:\\joshu\\Downloads\\Mountain Range 8k Height Map\\Mountain Range 8k Height Map\\Mountain Range Height Map PNG low.png");
-                        //let mesh = generate_terrain_chunk("");
-                        let new_entity = commands.spawn(PbrBundle {
-                            mesh: meshes.add(mesh),
-                            transform: Transform::from_translation(get_world_space_position(cur_chunk_pos)),
-                            material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
-                            ..Default::default()
-                        }).id();
-
-                        let new_chunk = Chunk{
-                            position: cur_chunk_pos, 
-                            remove_flag: false,
-                            entity: new_entity
-                        };
-
-                        OPEN_CHUNKS.push(new_chunk);
-                    }
+                //check if this chunk already exists
+                if exists {
+                    //if it does reset remove flag
+                    CREATED_CHUNKS[index].remove_flag = false;
+                }
+                else{
+                    chunks_to_create.push(cur_chunk_pos);
                 }
             }
         }
 
         //loop through all chunks and remove those who have the remove_flag set
-        let mut i = OPEN_CHUNKS.len();
+        let mut i = CREATED_CHUNKS.len();
         while i > 0 {
             i -= 1;
             // Check condition and remove if necessary
-            if OPEN_CHUNKS[i].remove_flag == true {
-                println!("Destroying chunk at {}", get_chunk_space_position(OPEN_CHUNKS[i].position));
-                commands.entity(OPEN_CHUNKS[i].entity).despawn();
-                OPEN_CHUNKS.remove(i);
+            if CREATED_CHUNKS[i].remove_flag == true {
+                println!("Destroying chunk at {}", get_chunk_space_position(CREATED_CHUNKS[i].position));
+                let null_chunk = Chunk{
+                    entity: CREATED_CHUNKS[i].entity,
+                    position: CREATED_CHUNKS[i].position,
+                    remove_flag: CREATED_CHUNKS[i].remove_flag,
+                };
+                CREATED_CHUNKS.remove(i);
+                NULL_CHUNKS.push(null_chunk);
             }
         }
+
+        let mut entity_transform_hashmap: HashMap<Entity, Chunk> = HashMap::new();
+
+        //go through the chunks we need to create and use it from null chunks
+        for i in 0..chunks_to_create.len() {
+            println!("Creating new chunk at {}", chunks_to_create[i]);
+            //pop null chunk
+            let chunk = NULL_CHUNKS.pop();
+            let mut chunk_exp = chunk.expect("null chunk error");
+
+            //update chunk position value
+            //update remove flag
+            chunk_exp.position = chunks_to_create[i];
+            chunk_exp.remove_flag = false;
+
+            entity_transform_hashmap.insert(chunk_exp.entity, chunk_exp);
+
+            //save new chunk
+            CREATED_CHUNKS.push(chunk_exp);
+        }
+
+        for (entity, mut transform) in chunk_query.iter_mut() {
+            if !entity_transform_hashmap.contains_key(entity.borrow()) {
+                continue;
+            }
+            let chunk_data: Option<&Chunk> = entity_transform_hashmap.get(entity.borrow());
+            transform.translation = get_world_space_position(chunk_data.expect("this shouldn't happen! no chunk data found!").position);
+        }
+
     }
 
 }
