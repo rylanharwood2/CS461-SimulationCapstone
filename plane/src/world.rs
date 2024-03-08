@@ -15,7 +15,7 @@ fn spawn_floor(
 ) {
     let floor = PbrBundle {
         mesh: meshes.add(Mesh::from(shape::Plane::from_size(15.0))),
-        material: materials.add(Color::DARK_GREEN.into()),
+        material: materials.add(Color::DARK_GREEN),
         ..default()
     };
 
