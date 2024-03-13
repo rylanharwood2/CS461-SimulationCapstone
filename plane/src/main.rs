@@ -15,7 +15,7 @@ fn main() {
             PlayerPlugin,
             WorldPlugin,
             CameraPlugin,
+            ThirdPersonCameraPlugin,
         ))
-        .add_plugins(ThirdPersonCameraPlugin)
         .run();
 }
