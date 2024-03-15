@@ -10,6 +10,7 @@ use bevy::render::mesh::shape::Cube;
 use bevy::render::render_resource::PrimitiveTopology;
 use bevy::render::mesh::{self, Indices};
 use bevy::utils::HashSet;
+use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView};
 use std::process::Command;
 use std::{borrow::Borrow, vec};
@@ -27,6 +28,7 @@ use std::env;
 use bevy::tasks::AsyncComputeTaskPool;
 use bevy::tasks::Task;
 use futures_lite::future;
+use bevy::render::view::NoFrustumCulling;
 
 #[derive(Copy, Clone)]
 struct Chunk{
@@ -36,13 +38,13 @@ struct Chunk{
 }
 
 const INITIAL_HM_PATH: &str = "./assets/images/terrainhm.png";
-const HM_HEIGHT: f32 = 5.0;
+const HM_HEIGHT: f32 = 5.;
 
 //Chunk generation settings
-const CHUNK_SIZE: f32 = 200.0;          
+const CHUNK_SIZE: f32 = 300.;          
 const CHUNK_RES: usize = 256;               //todo: have low resolution meshed along with high resolution meshes
-const CHUNK_VIEW_DISTANCE: u32 = 21;        //todo: make this mutable
-const TERRAIN_ZOOM: u32 = 13;        //todo: make this mutable
+const CHUNK_VIEW_DISTANCE: u32 = 16;        //todo: make this mutable
+const TERRAIN_ZOOM: u32 = 8;        //todo: make this mutable
 
 //Used for chunk entity world placement
 static mut CREATED_CHUNKS: Vec<Chunk> = Vec::new();     //represents created chunks
@@ -114,7 +116,6 @@ pub fn setup(
     info!("Use the mouse to look around");
     info!("Press Esc to hide or show the mouse cursor");
 }
-
 fn get_pixel_height(height_map: &DynamicImage, x: u32, y: u32, is_nextzen: bool) -> f32 {
     unsafe{
         let (width, height) = height_map.dimensions();
@@ -141,19 +142,17 @@ fn compute_world_space_normal(height_map: &DynamicImage, x: u32, y: u32, is_next
     let up_height = get_pixel_height(height_map, x, y.saturating_sub(1), is_nextzen);
     let down_height = get_pixel_height(height_map, x, y + 1, is_nextzen);
 
+    // let world_normal = Vec3::new(right_height-left_height, 1.0,  up_height-down_height).normalize();
+    // return world_normal;
+
+    let scale_x = CHUNK_RES as f32 / height_map.dimensions().0 as f32;
+    let scale_y = CHUNK_RES as f32 / height_map.dimensions().1 as f32;
     let dx = right_height - left_height;
     let dy = up_height - down_height;
-
-    let scale_x = 1.0 / height_map.dimensions().0 as f32;
-    let scale_y = 1.0 / height_map.dimensions().1 as f32;
-
     let va = Vec3::new(scale_x, 0.0, dx);
     let vb = Vec3::new(0.0, scale_y, dy);
-
     let normal = va.cross(vb);
-
     let world_normal = Vec3::new(-normal.x, normal.z, -normal.y);
-
     // Normalize the normal vector
     world_normal.normalize()
 }
@@ -305,12 +304,20 @@ fn generate_mesh_no_height(world_size: f32, res: usize) -> (Vec<Vec3>, Vec<Vec3>
 
 #[derive(Component)]
 pub struct ChunkComponent{}
-
 pub fn generate_pre_chunks(    
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ){
+    
+    if !Path::new("./temp/").exists(){
+        fs::create_dir("./temp").unwrap();
+    }
+    else {
+        fs::remove_dir_all("./temp").unwrap();
+        fs::create_dir("./temp").unwrap();
+    } 
+
     //lets create a whole bunch of chunks
     unsafe{
         //generate chunk based on image file
@@ -341,7 +348,7 @@ pub fn generate_pre_chunks(
                     ..Default::default()
                 }
             )).id();
-
+            commands.entity(chunk_entity).insert(NoFrustumCulling);
             //save entity, transform, position, and flag
             NULL_CHUNKS.push(Chunk{
                 position: vec3(0.0, 0.0, 0.0),
@@ -394,7 +401,7 @@ static mut UPDATE_MESH_QUEUE: Vec<(Entity, Mesh, Vec3)> = Vec::new();
 pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32) -> Option<Mesh>{
     let z = TERRAIN_ZOOM as i32;      //zoom
     let max = f32::powf(2.0, z as f32) - 1.0;
-    let tilesize = 256;
+    let tilesize = 512;
     let mut x = (chunk_x as f32 + max * 0.5) as i32;
     let mut y = (chunk_y as f32 + max * 0.5) as i32;
     // println!("max {}", max);
@@ -432,7 +439,7 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32) -> Option<Mesh>{
     if metadata_result.is_ok() {
         // println!("found existing terrain data file! {}", mky);
         let img = image::open(&Path::new(out_file.as_str())).unwrap();
-        img.blur(0.2);
+        img.resize(256, 256,  FilterType::Gaussian);
         let mesh = create_terrain_mesh(img, true, false);
         return Some(mesh);
     }
@@ -460,15 +467,13 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32) -> Option<Mesh>{
     let url = format!("https://tile.nextzen.org/tilezen/terrain/v1/{tilesize}/terrarium/{z}/{x}/{y}.png?api_key={api}");
     // println!("Fetching data at: ");
     // println!("{url}");
-    if !Path::new("./temp/").exists(){
-        fs::create_dir("./temp").unwrap();
-    } 
+
     //this only works on windows
     let output = Command::new("cmd")
         .args(["/C", format!("wget {url} -O {out_file}").as_str() ])
         .output()
         .expect("failed to execute process");
-    // let ret_str = output.status;
+    //  let ret_str = output.status;
     // println!("returned {ret_str}");
 
     let metadata_result = fs::metadata(out_file.clone());
@@ -477,7 +482,7 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32) -> Option<Mesh>{
     }
 
     let img = image::open(&Path::new(out_file.as_str())).unwrap();
-    img.blur(0.2);
+    img.resize(256, 256,  FilterType::Gaussian);
     let mesh = create_terrain_mesh(img, true, false);
     return Some(mesh);
 
