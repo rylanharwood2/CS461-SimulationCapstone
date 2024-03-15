@@ -39,9 +39,10 @@ const INITIAL_HM_PATH: &str = "./assets/images/terrainhm.png";
 const HM_HEIGHT: f32 = 1.0;
 
 //Chunk generation settings
-const CHUNK_SIZE: f32 = 10.0;          
-const CHUNK_RES: usize = 512;              //todo: have low resolution meshed along with high resolution meshes
-const CHUNK_VIEW_DISTANCE: u32 = 8;        //todo: make this mutable
+const CHUNK_SIZE: f32 = 200.0;          
+const CHUNK_RES: usize = 256;               //todo: have low resolution meshed along with high resolution meshes
+const CHUNK_VIEW_DISTANCE: u32 = 21;        //todo: make this mutable
+const TERRAIN_ZOOM: u32 = 13;        //todo: make this mutable
 
 //Used for chunk entity world placement
 static mut CREATED_CHUNKS: Vec<Chunk> = Vec::new();     //represents created chunks
@@ -122,11 +123,10 @@ fn get_pixel_height(height_map: &DynamicImage, x: u32, y: u32, is_nextzen: bool)
         let pixel = height_map.unsafe_get_pixel(x, y);
     
         if is_nextzen {
-            let r = pixel[0] as f32;
-            let g = pixel[1] as f32;
-            let b = pixel[2] as f32;
-    
-            let height = (r + g / 255. + b / 65536.) - 128.;
+            let r = (pixel[0] as f32) / 256.0;
+            let g = (pixel[1] as f32) / 256.0;
+            let b = (pixel[2] as f32) / 256.0;
+            let height = (r * 256. + g + b / 256.) - 128.;
             return height;
         }
         else {
@@ -184,7 +184,7 @@ fn create_terrain_mesh(img: DynamicImage, is_nextzen: bool, is_flat: bool) -> Me
         return mesh;
     }
 
-	let (vertices, normals, indices) = generate_mesh(img, CHUNK_SIZE, CHUNK_RES, HM_HEIGHT / CHUNK_SIZE, is_nextzen);
+	let (vertices, normals, indices) = generate_mesh(img, CHUNK_SIZE, CHUNK_RES, HM_HEIGHT, is_nextzen);
 	let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
 	let indi = Indices::U32(indices);
 	mesh.set_indices(Some(indi));
@@ -211,12 +211,25 @@ fn generate_mesh(texture_height_map: DynamicImage, world_size: f32, chunk_res: u
 
             let pixel_x = (x as f32) * ratio_w;
             let pixel_y = (y as f32) * ratio_h;
-            let pixel_x_int = pixel_x.floor() as u32;
-            let pixel_y_int = pixel_y.floor() as u32;
+            //take 5 samples to smooth out height
 
-            //use red channel for vertex height map
-            let height = get_pixel_height(&texture_height_map, pixel_x_int, pixel_y_int, is_nextzen);
-            let normal = compute_world_space_normal(&texture_height_map, pixel_x_int, pixel_y_int, is_nextzen);
+            let x_off = 2;
+            let y_off = 2;
+
+            let mut samples = 0.;
+            let mut height = 0.;
+            for i in -x_off..x_off{
+                for j in -y_off..y_off{
+                    let pixel_x = (x as f32 + i as f32) * ratio_w;
+                    let pixel_y = (y as f32 + j as f32) * ratio_h;
+                
+                    samples = samples + 1.;
+                    height = height + get_pixel_height(&texture_height_map, pixel_x as u32, pixel_y as u32, is_nextzen);
+                }
+            }
+            height = height / samples;
+
+            let normal = compute_world_space_normal(&texture_height_map, pixel_x as u32, pixel_y as u32, is_nextzen);
 
             // Calculate position for each vertex
             let position = Vec3::new(
@@ -377,8 +390,9 @@ fn chunk_exists(position: Vec3) -> (bool, usize){
     return (isit, index);
 }
 
+static mut UPDATE_MESH_QUEUE: Vec<(Entity, Mesh, Vec3)> = Vec::new();
 pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32) -> Option<Mesh>{
-    let z = 6;      //zoom
+    let z = TERRAIN_ZOOM as i32;      //zoom
     let max = f32::powf(2.0, z as f32) - 1.0;
     let tilesize = 256;
     let mut x = (chunk_x as f32 + max * 0.5) as i32;
@@ -418,6 +432,7 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32) -> Option<Mesh>{
     if metadata_result.is_ok() {
         // println!("found existing terrain data file! {}", mky);
         let img = image::open(&Path::new(out_file.as_str())).unwrap();
+        img.blur(0.2);
         let mesh = create_terrain_mesh(img, true, false);
         return Some(mesh);
     }
@@ -462,6 +477,7 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32) -> Option<Mesh>{
     }
 
     let img = image::open(&Path::new(out_file.as_str())).unwrap();
+    img.blur(0.2);
     let mesh = create_terrain_mesh(img, true, false);
     return Some(mesh);
 
@@ -488,43 +504,35 @@ pub fn handle_terrain_data_threads(
 
                 chunk_data_results.insert(key.clone(), mesh);
                 CHUNK_THREAD.remove(&key.clone());
+
+                commands.entity(cq).despawn();
             }
         }
 
-        // for threads in CHUNK_POS_THREAD_HANDLE.iter_mut(){
-        //     //check if thread is finished
-        //     let status = threads.1.is_finished();
-        //     //if the thread is finished, delete thread
-        //     if status {
-        //         threads_to_remove.push(threads.0.to_string());
-        //     }
-        // }
-        // if threads_to_remove.len() == 0 {
-        //     return;
-        // }
-        // let mut CHUNK_DATA_CACHE : HashMap<String, Option<Mesh>> = Default::default();
-        // for keys in threads_to_remove.iter(){
-        //     //get thread handle
-        //     let handle = CHUNK_POS_THREAD_HANDLE.remove(keys).unwrap();
-        //     let results = handle.join().expect("Mesh is null, this is a bug!");
-        //     // THREAD_COUNT = THREAD_COUNT - 1;
-        //     // println!("DELETING thread for {}!", keys);
-        //     // println!("THREADS ALIVE {}", THREAD_COUNT);
-        //     CHUNK_DATA_CACHE.insert(keys.clone(), results);
-        // }
-    
+        //update a single mesh
+        //the reason for not doing it multiple times a frame is because meshes.add causes a large spike in cpu time
+        //no way to fix it so we just do this to avoid it
+        let to_update = UPDATE_MESH_QUEUE.pop();
+        if to_update.is_some(){
+            let unwrapped = to_update.unwrap();
+            let mesh_handle = meshes.add(unwrapped.1);
+            commands.entity(unwrapped.0).insert(mesh_handle);
+            let mut new_pos = unwrapped.2;
+            new_pos.y = 0.;
+            commands.entity(unwrapped.0).insert(Transform::from_translation(new_pos));
+        }
+
         //apply new meshes to chunk entities
-        for (entity, mut transform) in chunk_query.iter_mut() {
+        for (entity, transform) in chunk_query.iter_mut() {
             let chunk_pos = get_chunk_space_position(transform.translation);
             let mesh_key = format!("{}_{}", chunk_pos.x, chunk_pos.z);
     
             if chunk_data_results.contains_key(&mesh_key.clone()){
                 let new_mesh = chunk_data_results.remove(&mesh_key.clone()).unwrap();
                 if new_mesh.is_some(){
-                    let mesh_handle = meshes.add(new_mesh.unwrap());
-                    commands.entity(entity).insert(mesh_handle);
+                    //add to mesh update queue
+                    UPDATE_MESH_QUEUE.push((entity, new_mesh.unwrap(), transform.translation));
                 }
-                transform.translation.y = 0.0;
             }
         }
     }
@@ -615,7 +623,6 @@ pub fn generate_chunks_update(
 
                 let entity = commands.spawn_empty().id();
                 let task = thread_pool.spawn(async move{
-                    //thread::sleep(time::Duration::from_millis(250));
                     let mesh = fetch_terrain_data(x, y);
                     return (entity, mesh, mkey);
                 });
