@@ -16,7 +16,6 @@ use bevy::{
 };
 use std::thread::{self, JoinHandle};
 use std::{fs, time};
-use dotenv::dotenv;
 use std::env;
 
 #[derive(Copy, Clone)]
@@ -30,20 +29,20 @@ const INITIAL_HM_PATH: &str = "./assets/images/terrainhm.png";
 const HM_HEIGHT: f32 = 30.0;
 
 //Chunk generation settings
-static CHUNK_SIZE: f32 = 100.0;          
-static CHUNK_RES: usize = 256;              //todo: have low resolution meshed along with high resolution meshes
-static CHUNK_VIEW_DISTANCE: u32 = 8;        //todo: make this mutable
+const CHUNK_SIZE: f32 = 100.0;          
+const CHUNK_RES: usize = 256;              //todo: have low resolution meshed along with high resolution meshes
+const CHUNK_VIEW_DISTANCE: u32 = 8;        //todo: make this mutable
 
 //Used for chunk entity world placement
 static mut CREATED_CHUNKS: Vec<Chunk> = Vec::new();     //represents created chunks
 static mut NULL_CHUNKS: Vec<Chunk> = Vec::new();        //represents null chunks
 
 //used for terrain data fetching
-static mut CHUNK_POS_THREAD_HANDLE: Lazy<HashMap<String, JoinHandle<DynamicImage>>> = Lazy::new(|| {
+static mut CHUNK_POS_THREAD_HANDLE: Lazy<HashMap<String, JoinHandle<Mesh>>> = Lazy::new(|| {
     let map = HashMap::new();
     map
 });
-static mut CHUNK_DATA_CACHE: Lazy<HashMap<String, DynamicImage>> = Lazy::new(|| {
+static mut CHUNK_DATA_CACHE: Lazy<HashMap<String, Mesh>> = Lazy::new(|| {
     let map = HashMap::new();
     map
 });
@@ -184,8 +183,6 @@ fn generate_mesh(texture_height_map: DynamicImage, world_size: f32, n: usize, he
 
             let pixel_x = (x as f32) * ratio_w;
             let pixel_y = (y as f32) * ratio_h;
-            //apply billinear filtering
-            //for now use nearest filtering
             let pixel_x_int = pixel_x.floor() as u32;
             let pixel_y_int = pixel_y.floor() as u32;
 
@@ -405,7 +402,8 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32){
                     Ok(_) => {
                         println!("found existing terrain data file! {}", mky);
                         let img = image::open(&Path::new(out_file.as_str())).unwrap();
-                        return img;
+                        let mesh = create_terrain_mesh(img);
+                        return mesh;
                     },
                     Err(_) => {
                         //no existing file found
@@ -450,7 +448,8 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32){
                 let ten_millis = time::Duration::from_millis(1000);
                 thread::sleep(ten_millis);
 
-                return img;
+                let mesh = create_terrain_mesh(img);
+                return mesh;
             });
 
             //remember thread handle
