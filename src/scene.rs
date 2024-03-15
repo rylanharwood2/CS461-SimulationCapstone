@@ -36,7 +36,7 @@ struct Chunk{
 }
 
 const INITIAL_HM_PATH: &str = "./assets/images/terrainhm.png";
-const HM_HEIGHT: f32 = 1.0;
+const HM_HEIGHT: f32 = 5.0;
 
 //Chunk generation settings
 const CHUNK_SIZE: f32 = 200.0;          
@@ -213,13 +213,13 @@ fn generate_mesh(texture_height_map: DynamicImage, world_size: f32, chunk_res: u
             let pixel_y = (y as f32) * ratio_h;
             //take 5 samples to smooth out height
 
-            let x_off = 2;
-            let y_off = 2;
+            let x_off = 1;
+            let y_off = 1;
 
             let mut samples = 0.;
             let mut height = 0.;
-            for i in -x_off..x_off{
-                for j in -y_off..y_off{
+            for i in -x_off..(x_off + 1){
+                for j in -y_off..(y_off + 1){
                     let pixel_x = (x as f32 + i as f32) * ratio_w;
                     let pixel_y = (y as f32 + j as f32) * ratio_h;
                 
@@ -509,17 +509,19 @@ pub fn handle_terrain_data_threads(
             }
         }
 
-        //update a single mesh
+        //update meshes
         //the reason for not doing it multiple times a frame is because meshes.add causes a large spike in cpu time
         //no way to fix it so we just do this to avoid it
-        let to_update = UPDATE_MESH_QUEUE.pop();
-        if to_update.is_some(){
-            let unwrapped = to_update.unwrap();
-            let mesh_handle = meshes.add(unwrapped.1);
-            commands.entity(unwrapped.0).insert(mesh_handle);
-            let mut new_pos = unwrapped.2;
-            new_pos.y = 0.;
-            commands.entity(unwrapped.0).insert(Transform::from_translation(new_pos));
+        while UPDATE_MESH_QUEUE.len() > 0 {
+            let to_update = UPDATE_MESH_QUEUE.pop();
+            if to_update.is_some(){
+                let unwrapped = to_update.unwrap();
+                let mesh_handle = meshes.add(unwrapped.1);
+                commands.entity(unwrapped.0).insert(mesh_handle);
+                let mut new_pos = unwrapped.2;
+                new_pos.y = 0.;
+                commands.entity(unwrapped.0).insert(Transform::from_translation(new_pos));
+            }
         }
 
         //apply new meshes to chunk entities
