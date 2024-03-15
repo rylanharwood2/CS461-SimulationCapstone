@@ -142,18 +142,9 @@ fn compute_world_space_normal(height_map: &DynamicImage, x: u32, y: u32) -> Vec3
     // Normalize the normal vector
     world_normal.normalize()
 }
-fn generate_terrain_chunk(path: &str) -> Mesh{
-
-    let n;
-    let chunk_size;
-
-    n = CHUNK_RES;
-    chunk_size = CHUNK_SIZE;
-
+fn create_terrain_mesh_from_path(path: &str) -> Mesh{
     if path.trim() == "" {
-        println!("No image data provided to terrain, creating flat terrain...");
-        println!("Caching mesh with path {}", path);
-        let (vertices, normals, indices) = generate_quad_empty(chunk_size, n);
+        let (vertices, normals, indices) = generate_mesh_no_height(CHUNK_SIZE, CHUNK_RES);
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
         let indi = Indices::U32(indices);
         mesh.set_indices(Some(indi));
@@ -161,11 +152,12 @@ fn generate_terrain_chunk(path: &str) -> Mesh{
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
         return mesh;
     }
-
 	let image_path = path; // Replace with the path to your image file
 	let img = image::open(&Path::new(image_path)).unwrap();
-
-	let (vertices, normals, indices) = generate_quad(img, chunk_size, n, HM_HEIGHT);
+    return create_terrain_mesh(img);
+}
+fn create_terrain_mesh(img: DynamicImage) -> Mesh{
+	let (vertices, normals, indices) = generate_mesh(img, CHUNK_SIZE, CHUNK_RES, HM_HEIGHT);
 	let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
 	let indi = Indices::U32(indices);
 	mesh.set_indices(Some(indi));
@@ -173,7 +165,7 @@ fn generate_terrain_chunk(path: &str) -> Mesh{
 	mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     return mesh;
 }
-fn generate_quad(texture_height_map: DynamicImage, world_size: f32, n: usize, height_scale: f32) -> (Vec<Vec3>, Vec<Vec3>, Vec<u32>) {
+fn generate_mesh(texture_height_map: DynamicImage, world_size: f32, n: usize, height_scale: f32) -> (Vec<Vec3>, Vec<Vec3>, Vec<u32>) {
     let mut vertices: Vec<Vec3> = Vec::new();
     let mut normals = Vec::new();
     let mut indices = Vec::new();
@@ -181,10 +173,10 @@ fn generate_quad(texture_height_map: DynamicImage, world_size: f32, n: usize, he
 	let step = world_size / (n - 1) as f32;
 
 	let (width, height) = texture_height_map.dimensions();
-    println!("Texture size: width: {} height: {}", width, height);
+    // println!("Texture size: width: {} height: {}", width, height);
 	let ratio_w = (width as f32) / (n as f32);
 	let ratio_h = (height as f32) / (n as f32);
-    println!("Texture ratio: width: {} height: {}", ratio_w, ratio_h);
+    // println!("Texture ratio: width: {} height: {}", ratio_w, ratio_h);
 
     // Generate vertices for a nxn quad
     for y in 0..n {
@@ -232,7 +224,7 @@ fn generate_quad(texture_height_map: DynamicImage, world_size: f32, n: usize, he
 
     (vertices, normals, indices)
 }
-fn generate_quad_empty(world_size: f32, n: usize) -> (Vec<Vec3>, Vec<Vec3>, Vec<u32>) {
+fn generate_mesh_no_height(world_size: f32, n: usize) -> (Vec<Vec3>, Vec<Vec3>, Vec<u32>) {
     let mut vertices: Vec<Vec3> = Vec::new();
     let mut normals = Vec::new();
     let mut indices = Vec::new();
@@ -284,7 +276,7 @@ pub fn generate_pre_chunks(
     //lets create a whole bunch of chunks
     unsafe{
         //generate chunk based on image file
-        let new_mesh = generate_terrain_chunk(INITIAL_HM_PATH);
+        let new_mesh = create_terrain_mesh_from_path(INITIAL_HM_PATH);
         
         let mesh_handle = meshes.add(new_mesh.clone());
 
