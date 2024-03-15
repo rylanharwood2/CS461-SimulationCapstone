@@ -4,10 +4,12 @@
 //github: https://github.com/JoshuaLim007
 //API used: https://developers.nextzen.org
 
-use bevy::math::vec3;
+use bevy::ecs::system::CommandQueue;
+use bevy::math::{vec2, vec3};
 use bevy::render::mesh::shape::Cube;
 use bevy::render::render_resource::PrimitiveTopology;
-use bevy::render::mesh::Indices;
+use bevy::render::mesh::{self, Indices};
+use bevy::utils::HashSet;
 use image::{DynamicImage, GenericImageView};
 use std::process::Command;
 use std::{borrow::Borrow, vec};
@@ -22,6 +24,9 @@ use bevy::{
 use std::thread::{self, JoinHandle};
 use std::{fs, option, string, time};
 use std::env;
+use bevy::tasks::AsyncComputeTaskPool;
+use bevy::tasks::Task;
+use futures_lite::future;
 
 #[derive(Copy, Clone)]
 struct Chunk{
@@ -43,11 +48,15 @@ static mut CREATED_CHUNKS: Vec<Chunk> = Vec::new();     //represents created chu
 static mut NULL_CHUNKS: Vec<Chunk> = Vec::new();        //represents null chunks
 
 //used for terrain data fetching
-static mut CHUNK_POS_THREAD_HANDLE: Lazy<HashMap<String, JoinHandle<Option<Mesh>>>> = Lazy::new(|| {
-    let map = HashMap::new();
+// static mut CHUNK_POS_THREAD_HANDLE: Lazy<HashMap<String, JoinHandle<Option<Mesh>>>> = Lazy::new(|| {
+//     let map = HashMap::new();
+//     map
+// });
+// static mut THREAD_COUNT: u32 = 0;
+static mut CHUNK_THREAD: Lazy<HashSet<String>> = Lazy::new(|| {
+    let map = HashSet::new();
     map
 });
-static mut THREAD_COUNT: u32 = 0;
 
 #[derive(Component)]
 pub struct SkyBoxComponent {}
@@ -368,7 +377,7 @@ fn chunk_exists(position: Vec3) -> (bool, usize){
     return (isit, index);
 }
 
-pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32){
+pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32) -> Option<Mesh>{
     let z = 6;      //zoom
     let max = f32::powf(2.0, z as f32) - 1.0;
     let tilesize = 256;
@@ -384,132 +393,133 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32){
 
     let new_chunk_x = chunk_x;
     let new_chunk_y = chunk_y;
-
+    // let key = format!("{}_{}", new_chunk_x, new_chunk_y);
+    
     //PUT YOUR OWN API!
     let api_key = env::vars().find(|daw| daw.0 == "Nextzen_API" );
     if api_key.is_none() {
         println!("ERROR! NO API KEY!");
         println!("Read README.md for more details.");
-        return;
+        return None;
     }
 
     let api = api_key.unwrap().1;
 
-    let key = format!("{}_{}", new_chunk_x, new_chunk_y);
+    // println!("SPAWNING thread terrain data! {}", key);
+    // THREAD_COUNT = THREAD_COUNT + 1;
+    // println!("THREADS ALIVE {}", THREAD_COUNT);
 
-    unsafe{
-        //check if this chunk position already is being worked on by a thread
-        if CHUNK_POS_THREAD_HANDLE.contains_key(&key) {
-            //do nothing
-        }
-        else {
-            // println!("SPAWNING thread terrain data! {}", key);
-            THREAD_COUNT = THREAD_COUNT + 1;
-            // println!("THREADS ALIVE {}", THREAD_COUNT);
-            let mky = key.clone();
+    //start fetching new data on seperate thread so we dont stall main thread
+    let out_file = format!("./temp/image_{new_chunk_x}_{new_chunk_y}.png");             
 
-            //start fetching new data on seperate thread so we dont stall main thread
-            let handle = thread::spawn(move || {
-                let out_file = format!("./temp/image_{new_chunk_x}_{new_chunk_y}.png");             
-
-                //then check if a file exists already
-                //skip api call if available
-                let metadata_result = fs::metadata(out_file.clone());
-                if metadata_result.is_ok() {
-                    // println!("found existing terrain data file! {}", mky);
-                    let img = image::open(&Path::new(out_file.as_str())).unwrap();
-                    let mesh = create_terrain_mesh(img, true, false);
-                    return Some(mesh);
-                }
-
-                //if checks fail, we call api to download terrain data
-
-                //API INFO:
-                //https://www.nextzen.org/
-                //https://developers.nextzen.org/about.html
-                //https://developers.nextzen.org/login
-
-                //JOSH API KEY: AEuTnCA5TvKSv-dI8lFQYw
-                //https://tile.nextzen.org/tilezen/terrain/v1/{tilesize}/terrarium/{z}/{x}/{y}.png?api_key=your-nextzen-api-key
-                //Mercator projection
-                //height = (red * 256 + green + blue / 256) - 32768
-
-                //2^z - 1
-                //1 -> 1    2
-                //2 -> 3    4
-                //3 -> 7    8
-                //4 -> 15   16
-                //5 -> 31   32
-
-                //fetch data from api
-                let url = format!("https://tile.nextzen.org/tilezen/terrain/v1/{tilesize}/terrarium/{z}/{x}/{y}.png?api_key={api}");
-                // println!("Fetching data at: ");
-                // println!("{url}");
-                if !Path::new("./temp/").exists(){
-                    fs::create_dir("./temp").unwrap();
-                } 
-                //this only works on windows
-                let output = Command::new("cmd")
-                    .args(["/C", format!("wget {url} -O {out_file}").as_str() ])
-                    .output()
-                    .expect("failed to execute process");
-                let ret_str = output.status;
-                // println!("returned {ret_str}");
-
-                let metadata_result = fs::metadata(out_file.clone());
-                if metadata_result.is_err() {
-                    return None;
-                }
-
-                let img = image::open(&Path::new(out_file.as_str())).unwrap();
-                let mesh = create_terrain_mesh(img, true, false);
-                return Some(mesh)
-            });
-
-            //remember thread handle
-            CHUNK_POS_THREAD_HANDLE.insert(key, handle);
-        }
+    //then check if a file exists already
+    //skip api call if available
+    let metadata_result = fs::metadata(out_file.clone());
+    if metadata_result.is_ok() {
+        // println!("found existing terrain data file! {}", mky);
+        let img = image::open(&Path::new(out_file.as_str())).unwrap();
+        let mesh = create_terrain_mesh(img, true, false);
+        return Some(mesh);
     }
+
+    //if checks fail, we call api to download terrain data
+
+    //API INFO:
+    //https://www.nextzen.org/
+    //https://developers.nextzen.org/about.html
+    //https://developers.nextzen.org/login
+
+    //JOSH API KEY: AEuTnCA5TvKSv-dI8lFQYw
+    //https://tile.nextzen.org/tilezen/terrain/v1/{tilesize}/terrarium/{z}/{x}/{y}.png?api_key=your-nextzen-api-key
+    //Mercator projection
+    //height = (red * 256 + green + blue / 256) - 32768
+
+    //2^z - 1
+    //1 -> 1    2
+    //2 -> 3    4
+    //3 -> 7    8
+    //4 -> 15   16
+    //5 -> 31   32
+
+    //fetch data from api
+    let url = format!("https://tile.nextzen.org/tilezen/terrain/v1/{tilesize}/terrarium/{z}/{x}/{y}.png?api_key={api}");
+    // println!("Fetching data at: ");
+    // println!("{url}");
+    if !Path::new("./temp/").exists(){
+        fs::create_dir("./temp").unwrap();
+    } 
+    //this only works on windows
+    let output = Command::new("cmd")
+        .args(["/C", format!("wget {url} -O {out_file}").as_str() ])
+        .output()
+        .expect("failed to execute process");
+    // let ret_str = output.status;
+    // println!("returned {ret_str}");
+
+    let metadata_result = fs::metadata(out_file.clone());
+    if metadata_result.is_err() {
+        return None;
+    }
+
+    let img = image::open(&Path::new(out_file.as_str())).unwrap();
+    let mesh = create_terrain_mesh(img, true, false);
+    return Some(mesh);
+
+    //remember thread handle
+    // CHUNK_POS_THREAD_HANDLE.insert(key, handle);
 }
+
 pub fn handle_terrain_data_threads(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut chunk_query: Query<(Entity, &mut Transform), With<ChunkComponent>>
+    mut chunk_query: Query<(Entity, &mut Transform), With<ChunkComponent>>,
+    mut gen_mesh_tasks: Query<&mut GenMesh>
 ){
     unsafe{
-        let mut threads_to_remove: Vec<String> = Vec::new();
+        let mut chunk_data_results : HashMap<String, Option<Mesh>> = Default::default();
+        for mut task in &mut gen_mesh_tasks {
+            if let Some(value) = bevy::tasks::block_on(future::poll_once(&mut task.0)) {
+                
+                let cq = value.0;
+                commands.entity(cq).remove::<GenMesh>();
 
-        for threads in CHUNK_POS_THREAD_HANDLE.iter_mut(){
-            //check if thread is finished
-            let status = threads.1.is_finished();
-            //if the thread is finished, delete thread
-            if status {
-                threads_to_remove.push(threads.0.to_string());
+                let mesh = value.1;
+                let key = value.2;
+
+                chunk_data_results.insert(key.clone(), mesh);
+                CHUNK_THREAD.remove(&key.clone());
             }
         }
-        if threads_to_remove.len() == 0 {
-            return;
-        }
 
-        let mut CHUNK_DATA_CACHE : HashMap<String, Option<Mesh>> = Default::default();
-        for keys in threads_to_remove.iter(){
-            //get thread handle
-            let handle = CHUNK_POS_THREAD_HANDLE.remove(keys).unwrap();
-            let results = handle.join().expect("Mesh is null, this is a bug!");
-
-            THREAD_COUNT = THREAD_COUNT - 1;
-            // println!("DELETING thread for {}!", keys);
-            // println!("THREADS ALIVE {}", THREAD_COUNT);
-            CHUNK_DATA_CACHE.insert(keys.clone(), results);
-        }
+        // for threads in CHUNK_POS_THREAD_HANDLE.iter_mut(){
+        //     //check if thread is finished
+        //     let status = threads.1.is_finished();
+        //     //if the thread is finished, delete thread
+        //     if status {
+        //         threads_to_remove.push(threads.0.to_string());
+        //     }
+        // }
+        // if threads_to_remove.len() == 0 {
+        //     return;
+        // }
+        // let mut CHUNK_DATA_CACHE : HashMap<String, Option<Mesh>> = Default::default();
+        // for keys in threads_to_remove.iter(){
+        //     //get thread handle
+        //     let handle = CHUNK_POS_THREAD_HANDLE.remove(keys).unwrap();
+        //     let results = handle.join().expect("Mesh is null, this is a bug!");
+        //     // THREAD_COUNT = THREAD_COUNT - 1;
+        //     // println!("DELETING thread for {}!", keys);
+        //     // println!("THREADS ALIVE {}", THREAD_COUNT);
+        //     CHUNK_DATA_CACHE.insert(keys.clone(), results);
+        // }
     
         //apply new meshes to chunk entities
         for (entity, mut transform) in chunk_query.iter_mut() {
             let chunk_pos = get_chunk_space_position(transform.translation);
             let mesh_key = format!("{}_{}", chunk_pos.x, chunk_pos.z);
     
-            if CHUNK_DATA_CACHE.contains_key(&mesh_key.clone()){
-                let new_mesh = CHUNK_DATA_CACHE.remove(&mesh_key.clone()).unwrap();
+            if chunk_data_results.contains_key(&mesh_key.clone()){
+                let new_mesh = chunk_data_results.remove(&mesh_key.clone()).unwrap();
                 if new_mesh.is_some(){
                     let mesh_handle = meshes.add(new_mesh.unwrap());
                     commands.entity(entity).insert(mesh_handle);
@@ -520,9 +530,13 @@ pub fn handle_terrain_data_threads(
     }
 }
 
+#[derive(Component)]
+pub struct GenMesh(Task<(Entity, Option<Mesh>, String)>);
+
 pub fn generate_chunks_update(
+    mut commands: Commands,
     camera_query: Query<(&FlyCam, &Transform), Without<ChunkComponent>>, 
-    mut chunk_query: Query<(Entity, &mut Transform), With<ChunkComponent>>
+    mut chunk_query: Query<(Entity, &mut Transform), With<ChunkComponent>>,
 ){
     unsafe{
 
@@ -541,6 +555,7 @@ pub fn generate_chunks_update(
     
         let half_chunk = (CHUNK_VIEW_DISTANCE as f32 * 0.5).ceil() as i32;
         let mut chunks_to_create: Vec<Vec3> = Vec::new();
+        let thread_pool = AsyncComputeTaskPool::get();
 
         //loop through chunk box
         for x in 0..(CHUNK_VIEW_DISTANCE) {
@@ -589,7 +604,24 @@ pub fn generate_chunks_update(
             let chunk = NULL_CHUNKS.pop();
             let mut chunk_exp = chunk.expect("null chunk error");
 
-            fetch_terrain_data(chunks_to_create[i].x as i32, chunks_to_create[i].z as i32);
+            let x = chunks_to_create[i].x as i32;
+            let y = chunks_to_create[i].z as i32;
+            
+            let key = format!("{}_{}", x, y);
+            let mkey = key.clone();
+
+            if !CHUNK_THREAD.contains(&key) {
+                CHUNK_THREAD.insert(key);
+
+                let entity = commands.spawn_empty().id();
+                let task = thread_pool.spawn(async move{
+                    //thread::sleep(time::Duration::from_millis(250));
+                    let mesh = fetch_terrain_data(x, y);
+                    return (entity, mesh, mkey);
+                });
+
+                commands.entity(entity).insert(GenMesh(task));
+            }
 
             //update chunk position value
             //update remove flag
