@@ -1,4 +1,9 @@
-use bevy::asset::io::file;
+//Latest update 3/15/2024
+//Code written by Joshua Lim
+//email: limjosh227@gmail.com
+//github: https://github.com/JoshuaLim007
+//API used: https://developers.nextzen.org
+
 use bevy::math::vec3;
 use bevy::render::mesh::shape::Cube;
 use bevy::render::render_resource::PrimitiveTopology;
@@ -15,7 +20,7 @@ use bevy::{
     prelude::*,
 };
 use std::thread::{self, JoinHandle};
-use std::{fs, time};
+use std::{fs, option, string, time};
 use std::env;
 
 #[derive(Copy, Clone)]
@@ -26,11 +31,11 @@ struct Chunk{
 }
 
 const INITIAL_HM_PATH: &str = "./assets/images/terrainhm.png";
-const HM_HEIGHT: f32 = 30.0;
+const HM_HEIGHT: f32 = 1.0;
 
 //Chunk generation settings
-const CHUNK_SIZE: f32 = 100.0;          
-const CHUNK_RES: usize = 256;              //todo: have low resolution meshed along with high resolution meshes
+const CHUNK_SIZE: f32 = 10.0;          
+const CHUNK_RES: usize = 512;              //todo: have low resolution meshed along with high resolution meshes
 const CHUNK_VIEW_DISTANCE: u32 = 8;        //todo: make this mutable
 
 //Used for chunk entity world placement
@@ -38,11 +43,7 @@ static mut CREATED_CHUNKS: Vec<Chunk> = Vec::new();     //represents created chu
 static mut NULL_CHUNKS: Vec<Chunk> = Vec::new();        //represents null chunks
 
 //used for terrain data fetching
-static mut CHUNK_POS_THREAD_HANDLE: Lazy<HashMap<String, JoinHandle<Mesh>>> = Lazy::new(|| {
-    let map = HashMap::new();
-    map
-});
-static mut CHUNK_DATA_CACHE: Lazy<HashMap<String, Mesh>> = Lazy::new(|| {
+static mut CHUNK_POS_THREAD_HANDLE: Lazy<HashMap<String, JoinHandle<Option<Mesh>>>> = Lazy::new(|| {
     let map = HashMap::new();
     map
 });
@@ -56,7 +57,6 @@ pub fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    asset_server: Res<AssetServer>,
 ) {
     let cascade_shadow_config = CascadeShadowConfigBuilder {
         first_cascade_far_bound: 2.0,
@@ -84,7 +84,9 @@ pub fn setup(
     commands.spawn((
         SkyBoxComponent{},
         PbrBundle {
-            mesh: meshes.add(Cube::new(1000.0).into()),
+            mesh: meshes.add(
+                Cube::new(1000.0).into()
+            ),
             material: materials.add(StandardMaterial {
                 base_color: Color::hex("888888").unwrap(),
                 unlit: true,
@@ -103,27 +105,32 @@ pub fn setup(
     info!("Press Esc to hide or show the mouse cursor");
 }
 
-fn get_pixel_height(height_map: &DynamicImage, x: u32, y: u32) -> f32 {
-    let (width, height) = height_map.dimensions();
-    let x = x.min(width - 1);
-    let y = y.min(height - 1);
-    let pixel = height_map.get_pixel(x, y);
-    pixel[0] as f32 / 255.0 // Normalize to range 0-1
+fn get_pixel_height(height_map: &DynamicImage, x: u32, y: u32, is_nextzen: bool) -> f32 {
+    unsafe{
+        let (width, height) = height_map.dimensions();
+        let x = x.min(width - 1);
+        let y = y.min(height - 1);
+        let pixel = height_map.unsafe_get_pixel(x, y);
+    
+        if is_nextzen {
+            let r = pixel[0] as f32;
+            let g = pixel[1] as f32;
+            let b = pixel[2] as f32;
+    
+            let height = (r + g / 255. + b / 65536.) - 128.;
+            return height;
+        }
+        else {
+            return pixel[0] as f32 / 255.0;
+        }
+    }
 }
-fn get_pixel_height_nextzen(height_map: &DynamicImage, x: u32, y: u32) -> f32{
-    let (width, height) = height_map.dimensions();
-    let x = x.min(width - 1);
-    let y = y.min(height - 1);
-    let pixel = height_map.get_pixel(x, y);
-    let height = (pixel[0] as f32 * 256. + pixel[1] as f32 + pixel[2] as f32 / 256.) - 32768.;
-    return height;
-}
-fn compute_world_space_normal(height_map: &DynamicImage, x: u32, y: u32) -> Vec3 {
+fn compute_world_space_normal(height_map: &DynamicImage, x: u32, y: u32, is_nextzen: bool) -> Vec3 {
     // Sample neighboring heights
-    let left_height = get_pixel_height(height_map, x.saturating_sub(1), y);
-    let right_height = get_pixel_height(height_map, x + 1, y);
-    let up_height = get_pixel_height(height_map, x, y.saturating_sub(1));
-    let down_height = get_pixel_height(height_map, x, y + 1);
+    let left_height = get_pixel_height(height_map, x.saturating_sub(1), y, is_nextzen);
+    let right_height = get_pixel_height(height_map, x + 1, y, is_nextzen);
+    let up_height = get_pixel_height(height_map, x, y.saturating_sub(1), is_nextzen);
+    let down_height = get_pixel_height(height_map, x, y + 1, is_nextzen);
 
     let dx = right_height - left_height;
     let dy = up_height - down_height;
@@ -131,8 +138,8 @@ fn compute_world_space_normal(height_map: &DynamicImage, x: u32, y: u32) -> Vec3
     let scale_x = 1.0 / height_map.dimensions().0 as f32;
     let scale_y = 1.0 / height_map.dimensions().1 as f32;
 
-    let va = Vec3::new(scale_x, 0.0, dx).normalize();
-    let vb = Vec3::new(0.0, scale_y, dy).normalize();
+    let va = Vec3::new(scale_x, 0.0, dx);
+    let vb = Vec3::new(0.0, scale_y, dy);
 
     let normal = va.cross(vb);
 
@@ -141,7 +148,7 @@ fn compute_world_space_normal(height_map: &DynamicImage, x: u32, y: u32) -> Vec3
     // Normalize the normal vector
     world_normal.normalize()
 }
-fn create_terrain_mesh_from_path(path: &str) -> Mesh{
+fn create_terrain_mesh_from_path(path: &str, is_nextzen: bool) -> Mesh{
     if path.trim() == "" {
         let (vertices, normals, indices) = generate_mesh_no_height(CHUNK_SIZE, CHUNK_RES);
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
@@ -153,10 +160,22 @@ fn create_terrain_mesh_from_path(path: &str) -> Mesh{
     }
 	let image_path = path; // Replace with the path to your image file
 	let img = image::open(&Path::new(image_path)).unwrap();
-    return create_terrain_mesh(img);
+    img.blur(16.0);
+    return create_terrain_mesh(img, is_nextzen, false);
 }
-fn create_terrain_mesh(img: DynamicImage) -> Mesh{
-	let (vertices, normals, indices) = generate_mesh(img, CHUNK_SIZE, CHUNK_RES, HM_HEIGHT);
+fn create_terrain_mesh(img: DynamicImage, is_nextzen: bool, is_flat: bool) -> Mesh{
+
+    if is_flat {
+        let (vertices, normals, indices) = generate_mesh_no_height(CHUNK_SIZE, CHUNK_RES);
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        let indi = Indices::U32(indices);
+        mesh.set_indices(Some(indi));
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+        return mesh;
+    }
+
+	let (vertices, normals, indices) = generate_mesh(img, CHUNK_SIZE, CHUNK_RES, HM_HEIGHT / CHUNK_SIZE, is_nextzen);
 	let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
 	let indi = Indices::U32(indices);
 	mesh.set_indices(Some(indi));
@@ -164,22 +183,22 @@ fn create_terrain_mesh(img: DynamicImage) -> Mesh{
 	mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     return mesh;
 }
-fn generate_mesh(texture_height_map: DynamicImage, world_size: f32, n: usize, height_scale: f32) -> (Vec<Vec3>, Vec<Vec3>, Vec<u32>) {
+fn generate_mesh(texture_height_map: DynamicImage, world_size: f32, chunk_res: usize, height_scale: f32, is_nextzen: bool) -> (Vec<Vec3>, Vec<Vec3>, Vec<u32>) {
     let mut vertices: Vec<Vec3> = Vec::new();
     let mut normals = Vec::new();
     let mut indices = Vec::new();
 
-	let step = world_size / (n - 1) as f32;
+	let step = world_size / (chunk_res - 1) as f32;
 
 	let (width, height) = texture_height_map.dimensions();
     // println!("Texture size: width: {} height: {}", width, height);
-	let ratio_w = (width as f32) / (n as f32);
-	let ratio_h = (height as f32) / (n as f32);
+	let ratio_w = (width as f32) / (chunk_res as f32);
+	let ratio_h = (height as f32) / (chunk_res as f32);
     // println!("Texture ratio: width: {} height: {}", ratio_w, ratio_h);
 
     // Generate vertices for a nxn quad
-    for y in 0..n {
-        for x in 0..n {
+    for y in 0..chunk_res {
+        for x in 0..chunk_res {
 
             let pixel_x = (x as f32) * ratio_w;
             let pixel_y = (y as f32) * ratio_h;
@@ -187,8 +206,8 @@ fn generate_mesh(texture_height_map: DynamicImage, world_size: f32, n: usize, he
             let pixel_y_int = pixel_y.floor() as u32;
 
             //use red channel for vertex height map
-            let height = get_pixel_height(&texture_height_map, pixel_x_int, pixel_y_int);
-            let normal = compute_world_space_normal(&texture_height_map, pixel_x_int, pixel_y_int);
+            let height = get_pixel_height(&texture_height_map, pixel_x_int, pixel_y_int, is_nextzen);
+            let normal = compute_world_space_normal(&texture_height_map, pixel_x_int, pixel_y_int, is_nextzen);
 
             // Calculate position for each vertex
             let position = Vec3::new(
@@ -200,11 +219,11 @@ fn generate_mesh(texture_height_map: DynamicImage, world_size: f32, n: usize, he
             normals.push(normal);
 
             // Create indices for the quad
-            if x < n - 1 && y < n - 1 {
-                let index = (y * n + x) as u32;
-                let next_row_index = ((y + 1) * n + x) as u32;
-                let next_column_index = (y * n + x + 1) as u32;
-                let next_diagonal_index = ((y + 1) * n + x + 1) as u32;
+            if x < chunk_res - 1 && y < chunk_res - 1 {
+                let index = (y * chunk_res + x) as u32;
+                let next_row_index = ((y + 1) * chunk_res + x) as u32;
+                let next_column_index = (y * chunk_res + x + 1) as u32;
+                let next_diagonal_index = ((y + 1) * chunk_res + x + 1) as u32;
 
                 // Triangle 1
                 indices.push(index);
@@ -221,16 +240,16 @@ fn generate_mesh(texture_height_map: DynamicImage, world_size: f32, n: usize, he
 
     (vertices, normals, indices)
 }
-fn generate_mesh_no_height(world_size: f32, n: usize) -> (Vec<Vec3>, Vec<Vec3>, Vec<u32>) {
+fn generate_mesh_no_height(world_size: f32, res: usize) -> (Vec<Vec3>, Vec<Vec3>, Vec<u32>) {
     let mut vertices: Vec<Vec3> = Vec::new();
     let mut normals = Vec::new();
     let mut indices = Vec::new();
 
-	let step = world_size / (n - 1) as f32;
+	let step = world_size / (res - 1) as f32;
 
     // Generate vertices for a nxn quad
-    for y in 0..n {
-        for x in 0..n {
+    for y in 0..res {
+        for x in 0..res {
             // Calculate position for each vertex
             let position = Vec3::new(
 				x as f32 * step  - world_size / 2.0, 
@@ -240,11 +259,11 @@ fn generate_mesh_no_height(world_size: f32, n: usize) -> (Vec<Vec3>, Vec<Vec3>, 
             vertices.push(position);
             normals.push(normal);
             // Create indices for the quad
-            if x < n - 1 && y < n - 1 {
-                let index = (y * n + x) as u32;
-                let next_row_index = ((y + 1) * n + x) as u32;
-                let next_column_index = (y * n + x + 1) as u32;
-                let next_diagonal_index = ((y + 1) * n + x + 1) as u32;
+            if x < res - 1 && y < res - 1 {
+                let index = (y * res + x) as u32;
+                let next_row_index = ((y + 1) * res + x) as u32;
+                let next_column_index = (y * res + x + 1) as u32;
+                let next_diagonal_index = ((y + 1) * res + x + 1) as u32;
 
                 // Triangle 1
                 indices.push(index);
@@ -273,9 +292,9 @@ pub fn generate_pre_chunks(
     //lets create a whole bunch of chunks
     unsafe{
         //generate chunk based on image file
-        let new_mesh = create_terrain_mesh_from_path(INITIAL_HM_PATH);
+        let new_mesh = create_terrain_mesh_from_path(INITIAL_HM_PATH, false);
         
-        let mesh_handle = meshes.add(new_mesh.clone());
+        let mesh_handle = meshes.add(new_mesh);
 
         //generate chunk entities
         for i in 0..(CHUNK_VIEW_DISTANCE * CHUNK_VIEW_DISTANCE){
@@ -308,7 +327,7 @@ pub fn generate_pre_chunks(
                 entity: chunk_entity,
             })
         }
-        println!("created {num} chunks", num = CHUNK_VIEW_DISTANCE * CHUNK_VIEW_DISTANCE);
+        // println!("created {num} chunks", num = CHUNK_VIEW_DISTANCE * CHUNK_VIEW_DISTANCE);
     }
 }
 
@@ -355,13 +374,16 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32){
     let tilesize = 256;
     let mut x = (chunk_x as f32 + max * 0.5) as i32;
     let mut y = (chunk_y as f32 + max * 0.5) as i32;
-    println!("max {}", max);
-    println!("x {}", x);
-    println!("y {}", y);
+    // println!("max {}", max);
+    // println!("api x {}", x);
+    // println!("api y {}", y);
 
     //xy position that is converted into xy space for map api
     x = i32::clamp(x, 0, max as i32);
     y = i32::clamp(y, 0, max as i32);
+
+    let new_chunk_x = chunk_x;
+    let new_chunk_y = chunk_y;
 
     //PUT YOUR OWN API!
     let api_key = env::vars().find(|daw| daw.0 == "Nextzen_API" );
@@ -373,7 +395,7 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32){
 
     let api = api_key.unwrap().1;
 
-    let key = format!("{}_{}", chunk_x, chunk_y);
+    let key = format!("{}_{}", new_chunk_x, new_chunk_y);
 
     unsafe{
         //check if this chunk position already is being worked on by a thread
@@ -381,33 +403,23 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32){
             //do nothing
         }
         else {
-            println!("SPAWNING thread terrain data! {}", key);
+            // println!("SPAWNING thread terrain data! {}", key);
             THREAD_COUNT = THREAD_COUNT + 1;
-            println!("THREADS ALIVE {}", THREAD_COUNT);
+            // println!("THREADS ALIVE {}", THREAD_COUNT);
             let mky = key.clone();
 
             //start fetching new data on seperate thread so we dont stall main thread
             let handle = thread::spawn(move || {
-                let out_file = format!("./temp/image_{chunk_x}_{chunk_y}.png");             
-
-                //check if we have terrain data loaded already   
-                if CHUNK_DATA_CACHE.contains_key(&mky) {
-                    println!("found cached data! {}", mky);
-                    return CHUNK_DATA_CACHE.remove(&mky).unwrap();
-                }
+                let out_file = format!("./temp/image_{new_chunk_x}_{new_chunk_y}.png");             
 
                 //then check if a file exists already
+                //skip api call if available
                 let metadata_result = fs::metadata(out_file.clone());
-                match metadata_result {
-                    Ok(_) => {
-                        println!("found existing terrain data file! {}", mky);
-                        let img = image::open(&Path::new(out_file.as_str())).unwrap();
-                        let mesh = create_terrain_mesh(img);
-                        return mesh;
-                    },
-                    Err(_) => {
-                        //no existing file found
-                    },
+                if metadata_result.is_ok() {
+                    // println!("found existing terrain data file! {}", mky);
+                    let img = image::open(&Path::new(out_file.as_str())).unwrap();
+                    let mesh = create_terrain_mesh(img, true, false);
+                    return Some(mesh);
                 }
 
                 //if checks fail, we call api to download terrain data
@@ -419,6 +431,7 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32){
 
                 //JOSH API KEY: AEuTnCA5TvKSv-dI8lFQYw
                 //https://tile.nextzen.org/tilezen/terrain/v1/{tilesize}/terrarium/{z}/{x}/{y}.png?api_key=your-nextzen-api-key
+                //Mercator projection
                 //height = (red * 256 + green + blue / 256) - 32768
 
                 //2^z - 1
@@ -430,8 +443,8 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32){
 
                 //fetch data from api
                 let url = format!("https://tile.nextzen.org/tilezen/terrain/v1/{tilesize}/terrarium/{z}/{x}/{y}.png?api_key={api}");
-                println!("Fetching data at: ");
-                println!("{url}");
+                // println!("Fetching data at: ");
+                // println!("{url}");
                 if !Path::new("./temp/").exists(){
                     fs::create_dir("./temp").unwrap();
                 } 
@@ -441,15 +454,16 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32){
                     .output()
                     .expect("failed to execute process");
                 let ret_str = output.status;
-                println!("returned {ret_str}");
+                // println!("returned {ret_str}");
+
+                let metadata_result = fs::metadata(out_file.clone());
+                if metadata_result.is_err() {
+                    return None;
+                }
 
                 let img = image::open(&Path::new(out_file.as_str())).unwrap();
-
-                let ten_millis = time::Duration::from_millis(1000);
-                thread::sleep(ten_millis);
-
-                let mesh = create_terrain_mesh(img);
-                return mesh;
+                let mesh = create_terrain_mesh(img, true, false);
+                return Some(mesh)
             });
 
             //remember thread handle
@@ -457,7 +471,11 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32){
         }
     }
 }
-pub fn handle_terrain_data_threads(){
+pub fn handle_terrain_data_threads(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut chunk_query: Query<(Entity, &mut Transform), With<ChunkComponent>>
+){
     unsafe{
         let mut threads_to_remove: Vec<String> = Vec::new();
 
@@ -469,22 +487,43 @@ pub fn handle_terrain_data_threads(){
                 threads_to_remove.push(threads.0.to_string());
             }
         }
+        if threads_to_remove.len() == 0 {
+            return;
+        }
 
+        let mut CHUNK_DATA_CACHE : HashMap<String, Option<Mesh>> = Default::default();
         for keys in threads_to_remove.iter(){
             //get thread handle
             let handle = CHUNK_POS_THREAD_HANDLE.remove(keys).unwrap();
-            let results = handle.join().expect("Image is null, this is a bug!");
+            let results = handle.join().expect("Mesh is null, this is a bug!");
 
             THREAD_COUNT = THREAD_COUNT - 1;
-            println!("DELETING thread for {}!", keys);
-            println!("THREADS ALIVE {}", THREAD_COUNT);
-
-            //fetch data will remove cached results, so we insert it no matter what
+            // println!("DELETING thread for {}!", keys);
+            // println!("THREADS ALIVE {}", THREAD_COUNT);
             CHUNK_DATA_CACHE.insert(keys.clone(), results);
+        }
+    
+        //apply new meshes to chunk entities
+        for (entity, mut transform) in chunk_query.iter_mut() {
+            let chunk_pos = get_chunk_space_position(transform.translation);
+            let mesh_key = format!("{}_{}", chunk_pos.x, chunk_pos.z);
+    
+            if CHUNK_DATA_CACHE.contains_key(&mesh_key.clone()){
+                let new_mesh = CHUNK_DATA_CACHE.remove(&mesh_key.clone()).unwrap();
+                if new_mesh.is_some(){
+                    let mesh_handle = meshes.add(new_mesh.unwrap());
+                    commands.entity(entity).insert(mesh_handle);
+                }
+                transform.translation.y = 0.0;
+            }
         }
     }
 }
-pub fn generate_chunks_update(camera_query: Query<(&FlyCam, &Transform), Without<ChunkComponent>>, mut chunk_query: Query<(Entity, &mut Transform), With<ChunkComponent>>){
+
+pub fn generate_chunks_update(
+    camera_query: Query<(&FlyCam, &Transform), Without<ChunkComponent>>, 
+    mut chunk_query: Query<(Entity, &mut Transform), With<ChunkComponent>>
+){
     unsafe{
 
         //go through every created chunks and mark them as destroy
@@ -569,8 +608,10 @@ pub fn generate_chunks_update(camera_query: Query<(&FlyCam, &Transform), Without
             }
             let chunk_data: Option<&Chunk> = entity_transform_hashmap.get(entity.borrow());
             transform.translation = get_world_space_position(chunk_data.expect("this shouldn't happen! no chunk data found!").position);
-        }
 
+            //put the chunk way down, perhaps below sea level to hide it until we get the chunk information
+            transform.translation.y = -10000.;
+        }
     }
 
 }
