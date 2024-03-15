@@ -1,12 +1,12 @@
-use bevy::core_pipeline::Skybox;
+use bevy::asset::io::file;
 use bevy::math::vec3;
 use bevy::render::mesh::shape::Cube;
-use bevy::{render::render_resource::PrimitiveTopology};
-use bevy::render::mesh::{Indices};
+use bevy::render::render_resource::PrimitiveTopology;
+use bevy::render::mesh::Indices;
 use image::{DynamicImage, GenericImageView};
-use std::borrow::Borrow;
-use std::string;
-use std::{path::Path};
+use std::process::Command;
+use std::{borrow::Borrow, vec};
+use std::path::Path;
 use CS461_SimulationCapstone::FlyCam;
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
@@ -14,6 +14,10 @@ use bevy::{
     pbr::{CascadeShadowConfigBuilder, NotShadowCaster},
     prelude::*,
 };
+use std::thread::{self, JoinHandle};
+use std::{fs, time};
+use dotenv::dotenv;
+use std::env;
 
 #[derive(Copy, Clone)]
 struct Chunk{
@@ -28,19 +32,22 @@ const HM_HEIGHT: f32 = 30.0;
 //Chunk generation settings
 static CHUNK_SIZE: f32 = 100.0;          
 static CHUNK_RES: usize = 256;              //todo: have low resolution meshed along with high resolution meshes
-static CHUNK_VIEW_DISTANCE: u32 = 32;        //todo: make this mutable
+static CHUNK_VIEW_DISTANCE: u32 = 8;        //todo: make this mutable
 
 //Used for chunk entity world placement
 static mut CREATED_CHUNKS: Vec<Chunk> = Vec::new();     //represents created chunks
 static mut NULL_CHUNKS: Vec<Chunk> = Vec::new();        //represents null chunks
 
-//Used for mesh generation (won't need after pre generation, todo: remove)
-static mut CHUNK_LOCATION_CACHE: Lazy<HashMap<String, Mesh>> = Lazy::new(|| {
+//used for terrain data fetching
+static mut CHUNK_POS_THREAD_HANDLE: Lazy<HashMap<String, JoinHandle<DynamicImage>>> = Lazy::new(|| {
     let map = HashMap::new();
     map
 });
-static mut FLAT_PLANE_CREATED: bool = false;
-static mut FLAT_PLANE_MESH: Option<Mesh> = None;
+static mut CHUNK_DATA_CACHE: Lazy<HashMap<String, DynamicImage>> = Lazy::new(|| {
+    let map = HashMap::new();
+    map
+});
+static mut THREAD_COUNT: u32 = 0;
 
 #[derive(Component)]
 pub struct SkyBoxComponent {}
@@ -104,6 +111,14 @@ fn get_pixel_height(height_map: &DynamicImage, x: u32, y: u32) -> f32 {
     let pixel = height_map.get_pixel(x, y);
     pixel[0] as f32 / 255.0 // Normalize to range 0-1
 }
+fn get_pixel_height_nextzen(height_map: &DynamicImage, x: u32, y: u32) -> f32{
+    let (width, height) = height_map.dimensions();
+    let x = x.min(width - 1);
+    let y = y.min(height - 1);
+    let pixel = height_map.get_pixel(x, y);
+    let height = (pixel[0] as f32 * 256. + pixel[1] as f32 + pixel[2] as f32 / 256.) - 32768.;
+    return height;
+}
 fn compute_world_space_normal(height_map: &DynamicImage, x: u32, y: u32) -> Vec3 {
     // Sample neighboring heights
     let left_height = get_pixel_height(height_map, x.saturating_sub(1), y);
@@ -132,42 +147,19 @@ fn generate_terrain_chunk(path: &str) -> Mesh{
     let n;
     let chunk_size;
 
-    unsafe{
-        n = CHUNK_RES;
-        chunk_size = CHUNK_SIZE;
-    }
+    n = CHUNK_RES;
+    chunk_size = CHUNK_SIZE;
 
     if path.trim() == "" {
         println!("No image data provided to terrain, creating flat terrain...");
-
-        unsafe{
-            if FLAT_PLANE_CREATED == false{
-                println!("Caching mesh with path {}", path);
-                let (vertices, normals, indices) = generate_quad_empty(chunk_size, n);
-                let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-                let indi = Indices::U32(indices);
-                mesh.set_indices(Some(indi));
-                mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
-                mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-                FLAT_PLANE_CREATED = true;
-                FLAT_PLANE_MESH = Some(mesh.clone());
-                return mesh;
-            }
-            else{
-                println!("Found mesh with path {}", path);
-                match FLAT_PLANE_MESH.clone() {
-                    Some(value) => return value,
-                    None => println!("No value"),
-                }
-            }
-        }
-    }
-
-    unsafe{
-        if let Some(value) = CHUNK_LOCATION_CACHE.get(path){
-            println!("Found mesh with path {}", path);
-            return value.clone();
-        }
+        println!("Caching mesh with path {}", path);
+        let (vertices, normals, indices) = generate_quad_empty(chunk_size, n);
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        let indi = Indices::U32(indices);
+        mesh.set_indices(Some(indi));
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+        return mesh;
     }
 
 	let image_path = path; // Replace with the path to your image file
@@ -179,10 +171,6 @@ fn generate_terrain_chunk(path: &str) -> Mesh{
 	mesh.set_indices(Some(indi));
 	mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
 	mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    unsafe{
-        println!("Caching mesh with path {}", path);
-        CHUNK_LOCATION_CACHE.insert(path.to_string(), mesh.clone());
-    }
     return mesh;
 }
 fn generate_quad(texture_height_map: DynamicImage, world_size: f32, n: usize, height_scale: f32) -> (Vec<Vec3>, Vec<Vec3>, Vec<u32>) {
@@ -372,6 +360,139 @@ fn chunk_exists(position: Vec3) -> (bool, usize){
     return (isit, index);
 }
 
+pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32){
+    let z = 6;      //zoom
+    let max = f32::powf(2.0, z as f32) - 1.0;
+    let tilesize = 256;
+    let mut x = (chunk_x as f32 + max * 0.5) as i32;
+    let mut y = (chunk_y as f32 + max * 0.5) as i32;
+    println!("max {}", max);
+    println!("x {}", x);
+    println!("y {}", y);
+
+    //xy position that is converted into xy space for map api
+    x = i32::clamp(x, 0, max as i32);
+    y = i32::clamp(y, 0, max as i32);
+
+    //PUT YOUR OWN API!
+    let api_key = env::vars().find(|daw| daw.0 == "Nextzen_API" );
+    if api_key.is_none() {
+        println!("ERROR! NO API KEY!");
+        println!("Read README.md for more details.");
+        return;
+    }
+
+    let api = api_key.unwrap().1;
+
+    let key = format!("{}_{}", chunk_x, chunk_y);
+
+    unsafe{
+        //check if this chunk position already is being worked on by a thread
+        if CHUNK_POS_THREAD_HANDLE.contains_key(&key) {
+            //do nothing
+        }
+        else {
+            println!("SPAWNING thread terrain data! {}", key);
+            THREAD_COUNT = THREAD_COUNT + 1;
+            println!("THREADS ALIVE {}", THREAD_COUNT);
+            let mky = key.clone();
+
+            //start fetching new data on seperate thread so we dont stall main thread
+            let handle = thread::spawn(move || {
+                let out_file = format!("./temp/image_{chunk_x}_{chunk_y}.png");             
+
+                //check if we have terrain data loaded already   
+                if CHUNK_DATA_CACHE.contains_key(&mky) {
+                    println!("found cached data! {}", mky);
+                    return CHUNK_DATA_CACHE.remove(&mky).unwrap();
+                }
+
+                //then check if a file exists already
+                let metadata_result = fs::metadata(out_file.clone());
+                match metadata_result {
+                    Ok(_) => {
+                        println!("found existing terrain data file! {}", mky);
+                        let img = image::open(&Path::new(out_file.as_str())).unwrap();
+                        return img;
+                    },
+                    Err(_) => {
+                        //no existing file found
+                    },
+                }
+
+                //if checks fail, we call api to download terrain data
+
+                //API INFO:
+                //https://www.nextzen.org/
+                //https://developers.nextzen.org/about.html
+                //https://developers.nextzen.org/login
+
+                //JOSH API KEY: AEuTnCA5TvKSv-dI8lFQYw
+                //https://tile.nextzen.org/tilezen/terrain/v1/{tilesize}/terrarium/{z}/{x}/{y}.png?api_key=your-nextzen-api-key
+                //height = (red * 256 + green + blue / 256) - 32768
+
+                //2^z - 1
+                //1 -> 1    2
+                //2 -> 3    4
+                //3 -> 7    8
+                //4 -> 15   16
+                //5 -> 31   32
+
+                //fetch data from api
+                let url = format!("https://tile.nextzen.org/tilezen/terrain/v1/{tilesize}/terrarium/{z}/{x}/{y}.png?api_key={api}");
+                println!("Fetching data at: ");
+                println!("{url}");
+                if !Path::new("./temp/").exists(){
+                    fs::create_dir("./temp").unwrap();
+                } 
+                //this only works on windows
+                let output = Command::new("cmd")
+                    .args(["/C", format!("wget {url} -O {out_file}").as_str() ])
+                    .output()
+                    .expect("failed to execute process");
+                let ret_str = output.status;
+                println!("returned {ret_str}");
+
+                let img = image::open(&Path::new(out_file.as_str())).unwrap();
+
+                let ten_millis = time::Duration::from_millis(1000);
+                thread::sleep(ten_millis);
+
+                return img;
+            });
+
+            //remember thread handle
+            CHUNK_POS_THREAD_HANDLE.insert(key, handle);
+        }
+    }
+}
+pub fn handle_terrain_data_threads(){
+    unsafe{
+        let mut threads_to_remove: Vec<String> = Vec::new();
+
+        for threads in CHUNK_POS_THREAD_HANDLE.iter_mut(){
+            //check if thread is finished
+            let status = threads.1.is_finished();
+            //if the thread is finished, delete thread
+            if status {
+                threads_to_remove.push(threads.0.to_string());
+            }
+        }
+
+        for keys in threads_to_remove.iter(){
+            //get thread handle
+            let handle = CHUNK_POS_THREAD_HANDLE.remove(keys).unwrap();
+            let results = handle.join().expect("Image is null, this is a bug!");
+
+            THREAD_COUNT = THREAD_COUNT - 1;
+            println!("DELETING thread for {}!", keys);
+            println!("THREADS ALIVE {}", THREAD_COUNT);
+
+            //fetch data will remove cached results, so we insert it no matter what
+            CHUNK_DATA_CACHE.insert(keys.clone(), results);
+        }
+    }
+}
 pub fn generate_chunks_update(camera_query: Query<(&FlyCam, &Transform), Without<ChunkComponent>>, mut chunk_query: Query<(Entity, &mut Transform), With<ChunkComponent>>){
     unsafe{
 
@@ -385,6 +506,7 @@ pub fn generate_chunks_update(camera_query: Query<(&FlyCam, &Transform), Without
         let camera_transform = *d.1;
 
         let position = camera_transform.translation;
+        //camera position in chunk space
         let cp = get_chunk_space_position(position);
     
         let half_chunk = (CHUNK_VIEW_DISTANCE as f32 * 0.5).ceil() as i32;
@@ -393,6 +515,8 @@ pub fn generate_chunks_update(camera_query: Query<(&FlyCam, &Transform), Without
         //loop through chunk box
         for x in 0..(CHUNK_VIEW_DISTANCE) {
             for y in 0..(CHUNK_VIEW_DISTANCE) {
+
+                //get chunk position in chunk space
                 let cur_x = (x as i32 - half_chunk) as f32 + cp.x;
                 let cur_y = (y as i32 - half_chunk) as f32 + cp.z;
                 let cur_chunk_pos = Vec3::new(cur_x, 0.0, cur_y);
@@ -415,7 +539,7 @@ pub fn generate_chunks_update(camera_query: Query<(&FlyCam, &Transform), Without
             i -= 1;
             // Check condition and remove if necessary
             if CREATED_CHUNKS[i].remove_flag == true {
-                println!("Destroying chunk at {}", get_chunk_space_position(CREATED_CHUNKS[i].position));
+                // println!("Destroying chunk at {}", get_chunk_space_position(CREATED_CHUNKS[i].position));
                 let null_chunk = Chunk{
                     entity: CREATED_CHUNKS[i].entity,
                     position: CREATED_CHUNKS[i].position,
@@ -430,10 +554,12 @@ pub fn generate_chunks_update(camera_query: Query<(&FlyCam, &Transform), Without
 
         //go through the chunks we need to create and use it from null chunks
         for i in 0..chunks_to_create.len() {
-            println!("Creating new chunk at {}", chunks_to_create[i]);
+            // println!("Creating new chunk at {}", chunks_to_create[i]);
             //pop null chunk
             let chunk = NULL_CHUNKS.pop();
             let mut chunk_exp = chunk.expect("null chunk error");
+
+            fetch_terrain_data(chunks_to_create[i].x as i32, chunks_to_create[i].z as i32);
 
             //update chunk position value
             //update remove flag
