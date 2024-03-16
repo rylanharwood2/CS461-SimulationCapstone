@@ -1,6 +1,6 @@
 # CS461-SimulationCapstone
 
-## Project Structure
+## Setup
 
 This Project requires a FREE 3rd party API KEY in order to work CORRECTLY!
 
@@ -14,7 +14,8 @@ https://developers.nextzen.org/
 7. It should look somthing like this: Nextzen_API = xxxxxxxxxxxxxxx
 8. Done
 9. WARNING: The ".env" file should NEVER be pushed onto the repository
-                
+
+## Project Structure                
 
 ```text
 .
