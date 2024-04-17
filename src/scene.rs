@@ -4,6 +4,7 @@
 //github: https://github.com/JoshuaLim007
 //API used: https://developers.nextzen.org
 
+use bevy::asset::io::file;
 use bevy::ecs::system::CommandQueue;
 use bevy::math::{vec2, vec3};
 use bevy::render::mesh::shape::Cube;
@@ -12,6 +13,7 @@ use bevy::render::mesh::{self, Indices};
 use bevy::utils::HashSet;
 use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView};
+use std::io::Read;
 use std::process::Command;
 use std::{borrow::Borrow, vec};
 use std::path::Path;
@@ -42,7 +44,7 @@ const HM_HEIGHT: f32 = 5.;
 
 //Chunk generation settings
 const CHUNK_SIZE: f32 = 300.;          
-const CHUNK_RES: usize = 256;               //todo: have low resolution meshed along with high resolution meshes
+const CHUNK_RES: usize = 64;               //todo: have low resolution meshed along with high resolution meshes
 const CHUNK_VIEW_DISTANCE: u32 = 16;        //todo: make this mutable
 const TERRAIN_ZOOM: u32 = 8;        //todo: make this mutable
 
@@ -465,16 +467,35 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32) -> Option<Mesh>{
 
     //fetch data from api
     let url = format!("https://tile.nextzen.org/tilezen/terrain/v1/{tilesize}/terrarium/{z}/{x}/{y}.png?api_key={api}");
-    // println!("Fetching data at: ");
-    // println!("{url}");
+    println!("Fetching data at: ");
+    println!("{url}");
 
     //this only works on windows
-    let output = Command::new("cmd")
-        .args(["/C", format!("wget {url} -O {out_file}").as_str() ])
-        .output()
-        .expect("failed to execute process");
-    //  let ret_str = output.status;
-    // println!("returned {ret_str}");
+    //you need wget
+    // let cmd = format!("wget {url} -O {out_file}");
+    // let output = Command::new("cmd")
+    //     .args(["/c", cmd.as_str() ])
+    //     .output()
+    //     .expect("failed to execute process");
+    // let ret_str = output.status;
+    // println!("{cmd} returned {ret_str}");
+
+    let req = reqwest::blocking::Client::builder().cookie_store(true).build().unwrap();
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert("authorization", "<authorization>".parse().unwrap());
+    headers.insert("user-agent","CUSTOM_NAME/1.0".parse().unwrap());
+    
+    let resp = req.get(url)
+        .headers(headers)
+        .send()
+        .unwrap();
+    
+    let resp_status = resp.status();
+    println!("Response status: {resp_status}");
+
+    let resp_bytes = resp.bytes().unwrap();
+    fs::write(out_file.clone(), resp_bytes).unwrap();
+    // image::save_buffer(&Path::new(out_file.as_str()), &resp_bytes, tilesize, tilesize, image::ColorType::Rgb8).unwrap();
 
     let metadata_result = fs::metadata(out_file.clone());
     if metadata_result.is_err() {
@@ -682,4 +703,17 @@ pub fn update_sky_box(
     // let eu = sunt.rotation.to_euler(EulerRot::XYZ);
     // sunt.rotation = Quat::from_euler(EulerRot::XYZ, eu.0 + 0.001, 0.5, eu.2);
     skybox.translation = camera.translation;
+}
+
+pub fn terrain_controls(
+    mut camera_query: Query<&mut Transform, With<FlyCam>>,
+    keys: Res<Input<KeyCode>>
+){
+    if keys.just_pressed(KeyCode::R) {
+        let mut cam = camera_query.single_mut();
+        cam.translation = vec3(0., 0., 0.);
+    }
+
+    // let mut cam = camera_query.single_mut();
+    // println!("{}", cam.translation);
 }

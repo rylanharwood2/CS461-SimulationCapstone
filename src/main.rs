@@ -27,7 +27,8 @@ fn main() {
         .add_systems(Update, (
             scene::generate_chunks_update,
             scene::handle_terrain_data_threads,
-            scene::update_sky_box
+            scene::update_sky_box,
+            scene::terrain_controls
         ))
         .run();
 }
