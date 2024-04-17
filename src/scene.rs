@@ -44,7 +44,7 @@ const HM_HEIGHT: f32 = 5.;
 
 //Chunk generation settings
 const CHUNK_SIZE: f32 = 300.;          
-const CHUNK_RES: usize = 64;               //todo: have low resolution meshed along with high resolution meshes
+const CHUNK_RES: usize = 256;               //todo: have low resolution meshed along with high resolution meshes
 const CHUNK_VIEW_DISTANCE: u32 = 16;        //todo: make this mutable
 const TERRAIN_ZOOM: u32 = 8;        //todo: make this mutable
 
@@ -126,10 +126,10 @@ fn get_pixel_height(height_map: &DynamicImage, x: u32, y: u32, is_nextzen: bool)
         let pixel = height_map.unsafe_get_pixel(x, y);
     
         if is_nextzen {
-            let r = (pixel[0] as f32) / 256.0;
-            let g = (pixel[1] as f32) / 256.0;
-            let b = (pixel[2] as f32) / 256.0;
-            let height = (r * 256. + g + b / 256.) - 128.;
+            let r = (pixel[0] as f32) / 255.0;
+            let g = (pixel[1] as f32) / 255.0;
+            let b = (pixel[2] as f32) / 255.0;
+            let height = (r * 255. + g + b / 255.) - 127.;
             return height;
         }
         else {
@@ -170,7 +170,7 @@ fn create_terrain_mesh_from_path(path: &str, is_nextzen: bool) -> Mesh{
     }
 	let image_path = path; // Replace with the path to your image file
 	let img = image::open(&Path::new(image_path)).unwrap();
-    img.blur(16.0);
+    // img.blur(16.0);
     return create_terrain_mesh(img, is_nextzen, false);
 }
 fn create_terrain_mesh(img: DynamicImage, is_nextzen: bool, is_flat: bool) -> Mesh{
@@ -441,7 +441,7 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32) -> Option<Mesh>{
     if metadata_result.is_ok() {
         // println!("found existing terrain data file! {}", mky);
         let img = image::open(&Path::new(out_file.as_str())).unwrap();
-        img.resize(256, 256,  FilterType::Gaussian);
+        // img.resize(256, 256,  FilterType::Gaussian);
         let mesh = create_terrain_mesh(img, true, false);
         return Some(mesh);
     }
@@ -503,7 +503,7 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32) -> Option<Mesh>{
     }
 
     let img = image::open(&Path::new(out_file.as_str())).unwrap();
-    img.resize(256, 256,  FilterType::Gaussian);
+    // img.resize(256, 256,  FilterType::Gaussian);
     let mesh = create_terrain_mesh(img, true, false);
     return Some(mesh);
 
