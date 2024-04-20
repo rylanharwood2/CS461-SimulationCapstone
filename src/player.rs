@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{math::vec3, prelude::*};
 use bevy_third_person_camera::ThirdPersonCameraTarget;
 use bevy::window::{CursorGrabMode, PrimaryWindow};
 pub struct PlayerPlugin;
@@ -14,34 +14,27 @@ impl Plugin for PlayerPlugin {
 /// Mouse sensitivity and movement speed
 #[derive(Resource)]
 pub struct MovementSettings {
-    pub sensitivity: f32,
-    pub speed: f32,
-    pub accel: f32,
-    pub decel: f32,
-    pub accel_max: f32,
-    pub decel_min: f32,
+    pub thrust_strength: f32,
     pub velocity: Vec3,
+    pub thrust_force: Vec3,
+    pub gravity_force: Vec3,
+    pub mass: f32
 }
 
 impl Default for MovementSettings {
     fn default() -> Self {
         Self {
-            sensitivity: 0.0005,
-            speed: 12.,
-            accel: 0.0,
-            decel: 0.0,
-            accel_max: 1.0,
-            decel_min: -1.0,
             velocity: Vec3::ZERO,
+            thrust_force: Vec3::ZERO,
+            gravity_force: Vec3::new(0., -9.81, 0.),
+            mass: 1.,
+            thrust_strength: 1000.,
         }
     }
 }
 
 #[derive(Component)]
 pub struct Player;
-
-#[derive(Component)]
-pub struct Speed(f32);
 
 fn spawn_player(
     mut commands: Commands,
@@ -64,7 +57,6 @@ fn spawn_player(
         },
         Player,
         ThirdPersonCameraTarget,
-        Speed(2.5),
     );
 
     commands.spawn(player);
@@ -74,90 +66,104 @@ fn player_movement(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     primary_window: Query<&Window, With<PrimaryWindow>>,
-    mut player_q: Query<(&mut Transform, &Speed), With<Player>>,
+    mut player_q: Query<&mut Transform, With<Player>>,
     mut settings: ResMut<MovementSettings>,
     cam_q: Query<&Transform, (With<Camera3d>, Without<Player>)>,
 ) {
     if let Ok(window) = primary_window.get_single() {
-        for (mut player_transform, player_speed) in player_q.iter_mut() {
-            let cam = match cam_q.get_single() {
-                Ok(c) => c,
-                Err(e) => Err(format!("Error retrieving camera: {}", e)).unwrap(),
-            };
-            let local_z = player_transform.local_z();
-            let forward = -Vec3::new(local_z.x, local_z.y, local_z.z);
-            let window_scale = window.height().min(window.width());
-            let (mut yaw, mut pitch, mut turn) = player_transform.rotation.to_euler(EulerRot::YXZ);
-            let mut direction: Vec3 = Vec3::ZERO;
+        for mut player_transform in player_q.iter_mut() {
 
-            // forward
-            if keys.pressed(KeyCode::KeyW) {
-                pitch += ((settings.sensitivity*3.0) * window_scale).to_radians();
-                player_transform.rotation = Quat::from_axis_angle(Vec3::Y, yaw) * Quat::from_axis_angle(Vec3::X, pitch);
+            let delta = time.delta().as_secs_f32();
+
+            //https://courses.lumenlearning.com/suny-physics/chapter/5-2-drag-forces/
+            let c = 0.05;   //drag coefficient of aircraft, this is equal to the coefficient of a sphere
+            let a = 1.;     //cross section area, 1m^3 for now
+            let p = 1.225;  //density of air at sea level
+
+            //we want to calculate physics independent from frame rate   
+            let mut delta_count = 0.;
+            let mut fixed_delta = 0.01;   //virtually running at 100 fps, enough physics steps for stable physics
+            if fixed_delta > delta {
+                fixed_delta = delta;
             }
 
-            // back
-            if keys.pressed(KeyCode::KeyS) {
-                pitch -= ((settings.sensitivity*3.0) * window_scale).to_radians();
-                player_transform.rotation = Quat::from_axis_angle(Vec3::Y, yaw) * Quat::from_axis_angle(Vec3::X, pitch);
-            }
+            loop {
+                let mut cur_velocity = settings.velocity;
+                let mut cur_thrust = settings.thrust_force;
+                let affine = player_transform.compute_affine();
 
-            if keys.pressed(KeyCode::KeyQ) {
-                turn += ((settings.sensitivity*3.0) * window_scale).to_radians();
-                player_transform.rotation = Quat::from_axis_angle(Vec3::X, pitch) * Quat::from_axis_angle(Vec3::Z, turn);
-            }
+                // let terminal_v = f32::sqrt(2. * settings.thrust_strength / (p * a * c));
+                // let mut cur_speed  = cur_velocity.length();
+                // println!("{cur_speed}, {terminal_v}");
 
-            if keys.pressed(KeyCode::KeyE) {
-                turn -= ((settings.sensitivity*3.0) * window_scale).to_radians();
-                player_transform.rotation = Quat::from_axis_angle(Vec3::X, pitch) * Quat::from_axis_angle(Vec3::Z, turn);
-            }  
-
-            // left
-            if keys.pressed(KeyCode::KeyA) {
-                yaw += ((settings.sensitivity*3.0) * window_scale).to_radians();
-                player_transform.rotation = Quat::from_axis_angle(Vec3::Y, yaw) * Quat::from_axis_angle(Vec3::X, pitch);
-            }
-
-            // right
-            if keys.pressed(KeyCode::KeyD) {
-                yaw -= ((settings.sensitivity*3.0) * window_scale).to_radians();
-                player_transform.rotation = Quat::from_axis_angle(Vec3::Y, yaw) * Quat::from_axis_angle(Vec3::X, pitch);
-            }
-
-            if keys.pressed(KeyCode::Space){
-                settings.velocity += forward;
-                settings.accel = settings.accel + 0.001;
-                settings.decel = 1.0;
-                if settings.accel <= 0.0{
-                    settings.accel = f32::max(settings.decel_min,settings.accel);
+                //compute this in local space
+                //increase thrust force only if current speed less than the 90% of terminal velocity
+                if keys.pressed(KeyCode::ShiftLeft){
+                    cur_thrust.z += settings.thrust_strength * fixed_delta;
                 }
-                else{
-                    settings.accel = f32::min(settings.accel_max,settings.accel);
+
+                //decrease thrust force
+                if keys.pressed(KeyCode::ControlLeft){
+                    cur_thrust.z -= settings.thrust_strength * fixed_delta;
+                    if cur_thrust.z < 0. {
+                        cur_thrust.z = 0.;
+                    }
+                }
+
+                settings.thrust_force = cur_thrust;
+
+                //calculate thrust in global space
+                let mut potential_velocity = cur_velocity;
+                let mut thrust_force = affine.transform_vector3(cur_thrust); 
+                potential_velocity += thrust_force * fixed_delta;
+
+                //calculate gravity in global space
+                let gravity_force = settings.gravity_force;
+                potential_velocity += gravity_force * fixed_delta;
+
+                //calculate drag
+                let drag_direction = (thrust_force + gravity_force).normalize_or_zero();
+                let drag_force = (0.5 * p * potential_velocity * potential_velocity * c * a).length();
+
+                let total_input_force = thrust_force + gravity_force;
+                let mut net_force = total_input_force - (drag_direction * drag_force);
+                if net_force.dot(total_input_force) < 0.0 {
+                    net_force *= 0.0;
+                }
+
+                //apply net force
+                cur_velocity += net_force * fixed_delta;
+
+                //set final velocity
+                settings.velocity = cur_velocity;
+
+                //flip z
+                cur_velocity.z *= -1.0;
+                player_transform.translation += cur_velocity * fixed_delta;
+
+                // let temp_force = thrust_force.normalize_or_zero();
+                // let look_at = player_transform.translation + Vec3::new(temp_force.x, temp_force.y, -temp_force.z);
+                // player_transform.rotation = player_transform.looking_at(look_at, Vec3::Y).rotation;
+
+                if keys.pressed(KeyCode::KeyW){
+                    player_transform.rotate_local_axis(Vec3::X, 1.0 * fixed_delta);
+                }
+                if keys.pressed(KeyCode::KeyS){
+                    player_transform.rotate_local_axis(Vec3::X, -1.0 * fixed_delta);
+                }
+                if keys.pressed(KeyCode::KeyD){
+                    player_transform.rotate_local_axis(Vec3::Y, 1.0 * fixed_delta);
+                }
+                if keys.pressed(KeyCode::KeyA){
+                    player_transform.rotate_local_axis(Vec3::Y, -1.0 * fixed_delta);
+                }
+
+                delta_count += fixed_delta;
+                if delta_count >= delta {
+                    break;
                 }
             }
-            if keys.pressed(KeyCode::ShiftLeft) {
-                settings.velocity -= forward;
-                settings.decel = -1.0;
-                settings.accel = settings.accel- 0.001;
-                settings.accel= f32::max(settings.decel_min,settings.accel);
-            }
-            direction.y = 0.0;
-            let movement = direction.normalize_or_zero() * player_speed.0 * time.delta_seconds();
-            player_transform.translation += movement;
 
-            
-            settings.velocity = settings.velocity.normalize_or_zero();
-
-            if(settings.accel > 0.0){
-                settings.accel = settings.accel-0.00035;
-                settings.velocity = settings.velocity.normalize_or_zero();
-                player_transform.translation += settings.velocity * time.delta_seconds() * settings.speed * (settings.accel) * (settings.decel)
-            }
-            else if (settings.accel < 0.0){
-                settings.accel = settings.accel+0.00035;
-                settings.velocity = settings.velocity.normalize_or_zero();
-                player_transform.translation += settings.velocity * time.delta_seconds() * settings.speed * (settings.accel) * (settings.decel)
-            }
         }
         
     }

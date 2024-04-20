@@ -34,7 +34,7 @@ struct Chunk{
 }
 
 const INITIAL_HM_PATH: &str = "./assets/images/terrainhm.png";
-const HM_HEIGHT: f32 = 5.;
+const HM_HEIGHT: f32 = 10.;
 
 //Chunk generation settings
 const CHUNK_SIZE: f32 = 1500.;          
@@ -461,8 +461,8 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32) -> Option<Mesh>{
 
     //fetch data from api
     let url = format!("https://tile.nextzen.org/tilezen/terrain/v1/{tilesize}/terrarium/{z}/{x}/{y}.png?api_key={api}");
-    println!("Fetching data at: ");
-    println!("{url}");
+    // println!("Fetching data at: ");
+    // println!("{url}");
 
     //this only works on windows
     //you need wget
@@ -485,7 +485,7 @@ pub fn fetch_terrain_data(chunk_x: i32, chunk_y: i32) -> Option<Mesh>{
         .unwrap();
     
     let resp_status = resp.status();
-    println!("Response status: {resp_status}");
+    // println!("Response status: {resp_status}");
 
     let resp_bytes = resp.bytes().unwrap();
     fs::write(out_file.clone(), resp_bytes).unwrap();
