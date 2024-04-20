@@ -4,33 +4,27 @@
 //github: https://github.com/JoshuaLim007
 //API used: https://developers.nextzen.org
 
-use bevy::asset::io::file;
-use bevy::ecs::system::CommandQueue;
-use bevy::math::{vec2, vec3};
-use bevy::render::mesh::shape::Cube;
+use bevy::math::vec3;
+use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::PrimitiveTopology;
-use bevy::render::mesh::{self, Indices};
+use bevy::render::mesh::Indices;
 use bevy::utils::HashSet;
-use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView};
-use std::io::Read;
-use std::process::Command;
-use std::{borrow::Borrow, vec};
+use std::borrow::Borrow;
 use std::path::Path;
-use CS461_SimulationCapstone::FlyCam;
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use bevy::{
     pbr::{CascadeShadowConfigBuilder, NotShadowCaster},
     prelude::*,
 };
-use std::thread::{self, JoinHandle};
-use std::{fs, option, string, time};
+use std::fs;
 use std::env;
 use bevy::tasks::AsyncComputeTaskPool;
 use bevy::tasks::Task;
 use futures_lite::future;
 use bevy::render::view::NoFrustumCulling;
+use crate::player::Player;
 
 #[derive(Copy, Clone)]
 struct Chunk{
@@ -43,9 +37,9 @@ const INITIAL_HM_PATH: &str = "./assets/images/terrainhm.png";
 const HM_HEIGHT: f32 = 5.;
 
 //Chunk generation settings
-const CHUNK_SIZE: f32 = 300.;          
+const CHUNK_SIZE: f32 = 1500.;          
 const CHUNK_RES: usize = 256;               //todo: have low resolution meshed along with high resolution meshes
-const CHUNK_VIEW_DISTANCE: u32 = 16;        //todo: make this mutable
+const CHUNK_VIEW_DISTANCE: u32 = 5;        //todo: make this mutable
 const TERRAIN_ZOOM: u32 = 8;        //todo: make this mutable
 
 //Used for chunk entity world placement
@@ -99,7 +93,7 @@ pub fn setup(
         SkyBoxComponent{},
         PbrBundle {
             mesh: meshes.add(
-                Cube::new(1000.0).into()
+                Cuboid::new(1000.0, 1000.0, 1000.0)
             ),
             material: materials.add(StandardMaterial {
                 base_color: Color::hex("888888").unwrap(),
@@ -161,9 +155,9 @@ fn compute_world_space_normal(height_map: &DynamicImage, x: u32, y: u32, is_next
 fn create_terrain_mesh_from_path(path: &str, is_nextzen: bool) -> Mesh{
     if path.trim() == "" {
         let (vertices, normals, indices) = generate_mesh_no_height(CHUNK_SIZE, CHUNK_RES);
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::all());
         let indi = Indices::U32(indices);
-        mesh.set_indices(Some(indi));
+        mesh.insert_indices(indi);
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
         return mesh;
@@ -177,18 +171,18 @@ fn create_terrain_mesh(img: DynamicImage, is_nextzen: bool, is_flat: bool) -> Me
 
     if is_flat {
         let (vertices, normals, indices) = generate_mesh_no_height(CHUNK_SIZE, CHUNK_RES);
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::all());
         let indi = Indices::U32(indices);
-        mesh.set_indices(Some(indi));
+        mesh.insert_indices(indi);
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
         return mesh;
     }
 
 	let (vertices, normals, indices) = generate_mesh(img, CHUNK_SIZE, CHUNK_RES, HM_HEIGHT, is_nextzen);
-	let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+	let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::all());
 	let indi = Indices::U32(indices);
-	mesh.set_indices(Some(indi));
+	mesh.insert_indices(indi);
 	mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
 	mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     return mesh;
@@ -571,7 +565,7 @@ pub struct GenMesh(Task<(Entity, Option<Mesh>, String)>);
 
 pub fn generate_chunks_update(
     mut commands: Commands,
-    camera_query: Query<(&FlyCam, &Transform), Without<ChunkComponent>>, 
+    camera_query: Query<(&Player, &Transform), Without<ChunkComponent>>, 
     mut chunk_query: Query<(Entity, &mut Transform), With<ChunkComponent>>,
 ){
     unsafe{
@@ -683,7 +677,7 @@ pub fn generate_chunks_update(
 
 }
 pub fn update_sky_box(
-    camera_query: Query<&Transform, (With<FlyCam>, Without<SkyBoxComponent>, Without<Sun>)>, 
+    camera_query: Query<&Transform, (With<Player>, Without<SkyBoxComponent>, Without<Sun>)>, 
     mut skybox: Query<&mut Transform, (With<SkyBoxComponent>, Without<Sun>)>,
     mut sun: Query<&mut Transform, With<Sun>>,
     ){
@@ -703,17 +697,4 @@ pub fn update_sky_box(
     // let eu = sunt.rotation.to_euler(EulerRot::XYZ);
     // sunt.rotation = Quat::from_euler(EulerRot::XYZ, eu.0 + 0.001, 0.5, eu.2);
     skybox.translation = camera.translation;
-}
-
-pub fn terrain_controls(
-    mut camera_query: Query<&mut Transform, With<FlyCam>>,
-    keys: Res<Input<KeyCode>>
-){
-    if keys.just_pressed(KeyCode::R) {
-        let mut cam = camera_query.single_mut();
-        cam.translation = vec3(0., 0., 0.);
-    }
-
-    // let mut cam = camera_query.single_mut();
-    // println!("{}", cam.translation);
 }

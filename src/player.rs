@@ -38,10 +38,10 @@ impl Default for MovementSettings {
 }
 
 #[derive(Component)]
-struct Player;
+pub struct Player;
 
 #[derive(Component)]
-struct Speed(f32);
+pub struct Speed(f32);
 
 fn spawn_player(
     mut commands: Commands,
@@ -57,7 +57,7 @@ fn spawn_player(
 //             ..default()
 //         },
         SceneBundle {
-            scene: assets.load("xwing.gltf#Scene0"),
+            scene: assets.load("./plane/xwing.gltf#Scene0"),
             transform: Transform::from_xyz(0.0, 0.5, 0.0),
             ..default()
 
