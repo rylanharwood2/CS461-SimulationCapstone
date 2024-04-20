@@ -34,13 +34,13 @@ struct Chunk{
 }
 
 const INITIAL_HM_PATH: &str = "./assets/images/terrainhm.png";
-const HM_HEIGHT: f32 = 10.;
+const HM_HEIGHT: f32 = 50.;
 
 //Chunk generation settings
-const CHUNK_SIZE: f32 = 1500.;          
-const CHUNK_RES: usize = 256;               //todo: have low resolution meshed along with high resolution meshes
-const CHUNK_VIEW_DISTANCE: u32 = 5;        //todo: make this mutable
-const TERRAIN_ZOOM: u32 = 8;        //todo: make this mutable
+const CHUNK_SIZE: f32 = 5000.;          
+const CHUNK_RES: usize = 512;               //todo: have low resolution meshed along with high resolution meshes
+const CHUNK_VIEW_DISTANCE: u32 = 8;        //todo: make this mutable
+const TERRAIN_ZOOM: u32 = 9;        //todo: make this mutable
 
 //Used for chunk entity world placement
 static mut CREATED_CHUNKS: Vec<Chunk> = Vec::new();     //represents created chunks
@@ -93,7 +93,7 @@ pub fn setup(
         SkyBoxComponent{},
         PbrBundle {
             mesh: meshes.add(
-                Cuboid::new(1000.0, 1000.0, 1000.0)
+                Cuboid::new(10000.0, 10000.0, 10000.0)
             ),
             material: materials.add(StandardMaterial {
                 base_color: Color::hex("888888").unwrap(),
@@ -120,14 +120,15 @@ fn get_pixel_height(height_map: &DynamicImage, x: u32, y: u32, is_nextzen: bool)
         let pixel = height_map.unsafe_get_pixel(x, y);
     
         if is_nextzen {
-            let r = (pixel[0] as f32) / 255.0;
-            let g = (pixel[1] as f32) / 255.0;
-            let b = (pixel[2] as f32) / 255.0;
-            let height = (r * 255. + g + b / 255.) - 127.;
+            //height = (red * 256 + green + blue / 256) - 32768
+            let r = pixel[0] as f32;
+            let g = pixel[1] as f32;
+            let b = pixel[2] as f32;
+            let height = (r + g / 256. + b / (256. * 256.)) - 128.;
             return height;
         }
         else {
-            return pixel[0] as f32 / 255.0;
+            return pixel[0] as f32 / 256.0;
         }
     }
 }
@@ -141,8 +142,8 @@ fn compute_world_space_normal(height_map: &DynamicImage, x: u32, y: u32, is_next
     // let world_normal = Vec3::new(right_height-left_height, 1.0,  up_height-down_height).normalize();
     // return world_normal;
 
-    let scale_x = CHUNK_RES as f32 / height_map.dimensions().0 as f32;
-    let scale_y = CHUNK_RES as f32 / height_map.dimensions().1 as f32;
+    let scale_x = 8 as f32 / height_map.dimensions().0 as f32;
+    let scale_y = 8 as f32 / height_map.dimensions().1 as f32;
     let dx = right_height - left_height;
     let dy = up_height - down_height;
     let va = Vec3::new(scale_x, 0.0, dx);
@@ -328,7 +329,7 @@ pub fn generate_pre_chunks(
             let mut mat = StandardMaterial::default();
             mat.perceptual_roughness = 0.5;
             mat.metallic = 0.0;
-            mat.base_color = Color::rgb(1.0, 1.0, 1.0);
+            mat.base_color = Color::hex("38703b").unwrap();
             mat.emissive = Color::rgb(0.0, 0.0, 0.0);
             mat.fog_enabled = true;
 

@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_third_person_camera::{camera::Zoom, ThirdPersonCamera};
+use bevy_third_person_camera::{camera::{Offset, Zoom}, ThirdPersonCamera};
 
 pub struct CameraPlugin;
 
@@ -12,11 +12,14 @@ impl Plugin for CameraPlugin {
 fn spawn_camera(mut commands: Commands) {
     let camera = (
         Camera3dBundle {
-            transform: Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
+            transform: Transform::from_xyz(0.,0.,0.),
+            projection: Projection::Perspective(PerspectiveProjection { fov: (1.22173), aspect_ratio: (16./9.), near: (0.1), far: (10000.) }),
             ..default()
         },
         ThirdPersonCamera{
-            zoom: Zoom::new(5.0, 100.0),
+            zoom: Zoom::new(5.0, 1000.0),
+            offset_enabled: true,
+            offset: Offset::new(0., 8.),
             ..default()
         },
         FogSettings {

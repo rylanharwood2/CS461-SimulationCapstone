@@ -13,9 +13,9 @@ fn main() {
     App::new()
         .add_plugins((
             DefaultPlugins,
-            player::PlayerPlugin,
-            camera::CameraPlugin,
             ThirdPersonCameraPlugin,
+            camera::CameraPlugin,
+            player::PlayerPlugin,
         ))
         .add_plugins(ObjPlugin)
         .add_systems(Startup, (
