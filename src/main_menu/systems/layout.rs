@@ -14,6 +14,7 @@ pub fn despawn_main_menu(mut commands: Commands, main_menu_query: Query<Entity, 
 }
 
 pub fn build_main_menu(commands: &mut Commands, asset_server: &Res<AssetServer>) -> Entity {
+    //main menu screen bundle/style
     let main_menu_entity = commands.spawn((NodeBundle {
             style: Style {
                 display: Display::Flex,
@@ -45,6 +46,7 @@ pub fn build_main_menu(commands: &mut Commands, asset_server: &Res<AssetServer>)
             },
             PlayButton {},
         ))
+        //play button text
         .with_children(|parent| {
             parent.spawn(TextBundle {
                 text: Text {

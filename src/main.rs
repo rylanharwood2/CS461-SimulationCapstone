@@ -31,7 +31,7 @@ fn main() {
             scene::handle_terrain_data_threads,
             scene::update_sky_box,
         ))
-        .insert_state(AppState::MainMenu)
+        .insert_state(AppState::MainMenu) //start app at main menu
         .run();
 }
 

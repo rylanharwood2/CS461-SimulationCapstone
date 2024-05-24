@@ -14,10 +14,12 @@ pub struct MainMenuPlugin;
 impl Plugin for MainMenuPlugin {
     fn build(&self, app: &mut App) {
         app
-        .add_systems(OnEnter(AppState::MainMenu), spawn_main_menu)
+        .add_systems(OnEnter(AppState::MainMenu), spawn_main_menu) //spawn menu when entering menu state
+        
+        //OTHER BUTTON FUNCTIONS GO HERE VVV
         .add_systems(Update, interact_with_play_button)
         // OnExit State Systems
-        .add_systems(OnExit(AppState::MainMenu), despawn_main_menu);
+        .add_systems(OnExit(AppState::MainMenu), despawn_main_menu); //despawn menu when exiting menu state
     }
 }
 

@@ -4,6 +4,8 @@ use crate::main_menu::components::*;
 use crate::main_menu::styles::{HOVERED_BUTTON_COLOR, NORMAL_BUTTON_COLOR, PRESSED_BUTTON_COLOR};
 use crate::AppState;
 
+
+//function to handle play button clicks. similar functions must be made for other buttons
 pub fn interact_with_play_button(
     mut button_query: Query<
         (&Interaction, &mut BackgroundColor),
