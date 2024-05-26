@@ -30,6 +30,30 @@ pub fn build_main_menu(commands: &mut Commands, asset_server: &Res<AssetServer>)
             },
         MainMenu {},
     ))
+
+    .with_children(|parent| {
+
+        parent.spawn(TextBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(500.0),
+                left: Val::Px(500.0),
+                
+                ..default()
+            },
+            text: Text {
+                sections: vec![TextSection::new(
+                    "Xtreme Flight Simulator",
+                    get_button_text_style(&asset_server),
+                    )],
+                    justify: JustifyText::Center,
+                    
+                    ..default()
+                },
+                ..default()
+            });
+            
+            })
     //play button
     .with_children(|parent| {
         parent.spawn((
