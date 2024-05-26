@@ -6,6 +6,7 @@ use bevy_third_person_camera::*;
 mod camera;
 mod player;
 mod scene;
+mod ui;
 
 //MAIN ENTRY, SHOULD BE VERY SPARSE
 fn main() {
@@ -14,6 +15,7 @@ fn main() {
         .add_plugins((
             DefaultPlugins,
             ThirdPersonCameraPlugin,
+            ui::UiPlugin,
             camera::CameraPlugin,
             player::PlayerPlugin,
         ))

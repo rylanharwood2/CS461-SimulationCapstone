@@ -37,10 +37,10 @@ const INITIAL_HM_PATH: &str = "./assets/images/terrainhm.png";
 const HM_HEIGHT: f32 = 50.;
 
 //Chunk generation settings
-const CHUNK_SIZE: f32 = 5000.;          
+const CHUNK_SIZE: f32 = 2500.;          
 const CHUNK_RES: usize = 512;               //todo: have low resolution meshed along with high resolution meshes
 const CHUNK_VIEW_DISTANCE: u32 = 8;        //todo: make this mutable
-const TERRAIN_ZOOM: u32 = 9;        //todo: make this mutable
+const TERRAIN_ZOOM: u32 = 8;        //todo: make this mutable
 
 //Used for chunk entity world placement
 static mut CREATED_CHUNKS: Vec<Chunk> = Vec::new();     //represents created chunks
