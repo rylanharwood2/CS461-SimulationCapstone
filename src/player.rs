@@ -36,10 +36,10 @@ impl Default for MovementSettings {
             velocity: Vec3::new(250., 0., 0.),
             thrust_force: 0.,               //in Newtons
             gravity_force: Vec3::new(0., -9.81, 0.),  //m/s^2
-            mass: 340_0.,                 //in KG
+            mass: 340_000.,                 //in KG
             lift_direction: Vec3::ZERO,
-            thrust_force_max: 2_008_000.,    //in Newtons
-            cross_section_body_area: 12.,   //M^2
+            thrust_force_max: 1_008_000.,    //in Newtons
+            cross_section_body_area: 24.,   //M^2
             wing_area: 520.,                //M^2
             flaps_enabled: false,
             flaps_angle: 0.0,
@@ -111,10 +111,6 @@ fn player_movement(
             let mut cur_thrust = settings.thrust_force;
             let forward = player_transform.forward().xyz();
 
-            // let terminal_v = f32::sqrt(2. * settings.thrust_strength / (p * a * c));
-            // let mut cur_speed  = cur_velocity.length();
-            // println!("{cur_speed}, {terminal_v}");
-
             //compute this in local space
             //increase thrust force only if current speed less than the 90% of terminal velocity
             if keys.pressed(KeyCode::ShiftLeft){
@@ -136,50 +132,40 @@ fn player_movement(
 
             let angle_of_attack = settings.angle_of_attack;
 
-            let max_lift_coeff = 3.;
+            //scale to apply to drag coeff when aoa is high
             let drag_coeff_scale = 2.;
 
-            //calculate lift
-            let lift_scaler = (1. - angle_of_attack).powf(2.);
-            let lift_direction = settings.lift_direction;
-            let mut lift_strength = 0.5 * p * f32::powf(cur_velocity.length(), 2.) * f32::lerp(0.0, max_lift_coeff, lift_scaler) * a1;
-            let mut lift = lift_direction * lift_strength;
+            //scale to artificially scale lift force
+            let lift_bias = 1.2;
 
-            // //check if energy was added to sytem, if so, adjust the force such that it won't
-            // //speed before lift
-            // let speed = cur_velocity.length();
-            // let mut velocity_lift = cur_velocity + lift / settings.mass;
-            // let mut post_speed = velocity_lift.length();
-            // if post_speed > speed {
-            //     gizmos.arrow(player_transform.translation, player_transform.translation + lift, Color::PURPLE);
-            //     let temp = cur_velocity + lift;
-            //     let mut projected_velocity = (cur_velocity.dot(temp) / velocity_lift.length_squared()) * temp;
-            //     projected_velocity = projected_velocity.normalize_or_zero() * speed;
-            //     let adjust = projected_velocity - cur_velocity;
-            //     lift = adjust * settings.mass;
-            //     lift = lift.clamp_length(0., lift_strength);
-            //     gizmos.arrow(player_transform.translation, player_transform.translation + lift, Color::YELLOW);
-            // }
-            // velocity_lift = cur_velocity + lift / settings.mass;
-            // post_speed = velocity_lift.length();
-            
+            //calculate lift
+
+            let pre_lift_speed = cur_velocity.length();
+            let lift_direction = settings.lift_direction;
+            let lift_scaler = 1. - angle_of_attack;
+            let lift_strength = (0.5 * p * f32::powf(cur_velocity.length(), 2.) * a1 * lift_bias) * lift_scaler;
+            let lift = lift_direction * lift_strength;
+            let lift_accel = lift / settings.mass; 
+            cur_velocity += lift_accel * delta;
+            cur_velocity = Vec3::clamp_length(cur_velocity, 0., pre_lift_speed);
+
             //calculate drag
             let drag_scaler = (1. - angle_of_attack).powf(2.);
             let drag_dir = -cur_velocity.normalize_or_zero();
             let drag_str = 0.5 * p * f32::powf(cur_velocity.length(), 2.) * (f32::lerp(c, c * drag_coeff_scale, drag_scaler)) * a;
             let drag_frc = drag_dir * drag_str;
 
-            let net_accel = 
+            let mut net_accel = 
                 cur_thrust_vec / settings.mass 
                 + settings.gravity_force 
-                + drag_frc / settings.mass 
-                + lift / settings.mass;
+                + drag_frc / settings.mass;
 
             //apply net force
             cur_velocity += net_accel * delta;
 
             unsafe{
                 let t = cur_velocity.length();
+                net_accel += lift_accel;
                 if TIMER > 1.0 {
                     println!("vel {cur_velocity}");
                     println!("accel {net_accel}");
