@@ -3,6 +3,10 @@ use bevy::prelude::*;
 use crate::main_menu::components::*;
 use crate::main_menu::styles::*;
 
+
+#[derive(Component)]
+struct NameText;
+
 pub fn spawn_main_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
     build_main_menu(&mut commands, &asset_server);
 }
@@ -15,7 +19,9 @@ pub fn despawn_main_menu(mut commands: Commands, main_menu_query: Query<Entity, 
 
 pub fn build_main_menu(commands: &mut Commands, asset_server: &Res<AssetServer>) -> Entity {
     //main menu screen bundle/style
-    let main_menu_entity = commands.spawn((NodeBundle {
+    let main_menu_entity: Entity = 
+    
+    commands.spawn((NodeBundle {
             style: Style {
                 display: Display::Flex,
                 flex_direction: FlexDirection::Column,
@@ -30,6 +36,31 @@ pub fn build_main_menu(commands: &mut Commands, asset_server: &Res<AssetServer>)
             },
         MainMenu {},
     ))
+    
+    .with_children(|parent| {
+
+        parent.spawn(TextBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(500.0),
+                left: Val::Px(500.0),
+                
+                ..default()
+            },
+            text: Text {
+                sections: vec![TextSection::new(
+                    "Xtreme Flight Simulator",
+                    get_button_text_style(&asset_server),
+                    )],
+                    justify: JustifyText::Center,
+                    
+                    ..default()
+                },
+                ..default()
+            });
+            
+            })
+            
     //play button
     .with_children(|parent| {
         parent.spawn((
@@ -61,6 +92,7 @@ pub fn build_main_menu(commands: &mut Commands, asset_server: &Res<AssetServer>)
             });
             
             });
+    
         })
     .id();
 
