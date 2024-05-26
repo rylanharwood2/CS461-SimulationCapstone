@@ -1,16 +1,31 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, window::CursorGrabMode};
+use bevy_third_person_camera::ThirdPersonCamera;
 use crate::player::MovementSettings;
-
+use bevy::window::PrimaryWindow;
 // A unit struct to help identify the FPS UI component, since there may be many Text components
 #[derive(Component)]
 struct InformationTextBox;
 
 pub struct UiPlugin;
+/// Mouse sensitivity and movement speed
+#[derive(Resource)]
+pub struct PauseState {
+    pub is_paused: bool,
+}
+impl Default for PauseState {
+    fn default() -> Self {
+        Self {
+            is_paused: true,
+        }
+    }
+}
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup)
-            .add_systems(PostUpdate, text_update_system);
+            .add_systems(PostUpdate, text_update_system)
+            .add_systems(PreUpdate, pause_update)
+            .init_resource::<PauseState>();
     }
 }
 
@@ -44,6 +59,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 fn text_update_system(
     player: Res<MovementSettings>,
     mut query: Query<&mut Text, With<InformationTextBox>>,
+    keys: Res<ButtonInput<KeyCode>>,
 ) {
     for mut text in &mut query {
         let current_force = player.thrust_force;
@@ -55,8 +71,35 @@ fn text_update_system(
             Speed(m/s) {}\n
             Flaps {}\n
             Flaps Angle {}\n", 
-        percent_force, speed, player.flaps_enabled, player.flaps_angle);
+        percent_force, speed, player.flaps_enabled, player.flaps_angle * 180.0 / 3.14);
 
         text.sections[0].value = output.to_string();
+    }
+}
+fn pause_update(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut pause: ResMut<PauseState>,
+    mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
+    mut tpc: Query<&mut ThirdPersonCamera>,
+){
+    if pause.is_paused {
+        let mut window = &mut primary_window.single_mut();
+        window.cursor.visible = true;
+        window.cursor.grab_mode = CursorGrabMode::None;
+        tpc.single_mut().cursor_lock_active = false;
+        tpc.single_mut().cursor_lock_toggle_enabled = false;
+    }
+    else{
+        tpc.single_mut().cursor_lock_toggle_enabled = true;
+    }
+
+    if keys.just_pressed(KeyCode::Escape){
+        if pause.is_paused == false {
+            pause.is_paused = true;
+        }
+        else {
+            pause.is_paused = false;
+            tpc.single_mut().cursor_lock_active = true;
+        }
     }
 }

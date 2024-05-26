@@ -2,6 +2,8 @@ use bevy::{core::Zeroable, gizmos, math::vec3, prelude::*, scene::ron::de, utils
 use bevy_third_person_camera::ThirdPersonCameraTarget;
 use bevy::window::{CursorGrabMode, PrimaryWindow};
 use rand::{distributions::Normal, Rng};
+
+use crate::ui::PauseState;
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
@@ -33,16 +35,16 @@ pub struct MovementSettings {
 impl Default for MovementSettings {
     fn default() -> Self {
         Self {
-            velocity: Vec3::new(250., 0., 0.),
-            thrust_force: 0.,               //in Newtons
+            velocity: Vec3::new(300., 0., 0.),
+            thrust_force: 1_008_000.,               //in Newtons
             gravity_force: Vec3::new(0., -9.81, 0.),  //m/s^2
             mass: 340_000.,                 //in KG
             lift_direction: Vec3::ZERO,
             thrust_force_max: 1_008_000.,    //in Newtons
             cross_section_body_area: 24.,   //M^2
             wing_area: 520.,                //M^2
-            flaps_enabled: false,
-            flaps_angle: 0.0,
+            flaps_enabled: true,
+            flaps_angle: 0.2,
             angle_of_attack: 0.0,
         }
     }
@@ -83,16 +85,22 @@ fn player_movement(
     primary_window: Query<&Window, With<PrimaryWindow>>,
     mut player_q: Query<&mut Transform, With<Player>>,
     mut settings: ResMut<MovementSettings>,
+    mut pause: ResMut<PauseState>,
     mut cam_q: Query<&Transform, (With<Camera3d>, Without<Player>)>,
     mut gizmos: Gizmos,
 ) {
+
+    if pause.is_paused {
+        return;
+    }
+
     if let Ok(window) = primary_window.get_single() {
         for mut player_transform in player_q.iter_mut() {
             if keys.just_pressed(KeyCode::KeyR){
-                let numx = (rand::thread_rng().gen_range(0., 1.) as f32 * 2. - 1.) * 1000000.;
-                let numz = (rand::thread_rng().gen_range(0., 1.) as f32 * 2. - 1.) * 1000000.;
-                println!("{numx}, {numz}");
-                player_transform.translation = Vec3::new(numx as f32, player_transform.translation.y, numz as f32)
+                let x = ((rand::random::<u32>() as f32 / u32::MAX as f32) * 2. - 1.) * 10000.;
+                let y = 100.0 as f32;
+                let z = ((rand::random::<u32>() as f32 / u32::MAX as f32) * 2. - 1.) * 10000.;
+                player_transform.translation = Vec3::new(x, y, z);
             }
             let delta = time.delta().as_secs_f32();
 
