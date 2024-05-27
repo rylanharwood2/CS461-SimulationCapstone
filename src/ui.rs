@@ -7,7 +7,6 @@ use bevy::window::PrimaryWindow;
 struct InformationTextBox;
 
 pub struct UiPlugin;
-/// Mouse sensitivity and movement speed
 #[derive(Resource)]
 pub struct PauseState {
     pub is_paused: bool,

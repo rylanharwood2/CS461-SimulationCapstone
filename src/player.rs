@@ -28,6 +28,7 @@ pub struct MovementSettings {
     pub flaps_enabled: bool,
     pub flaps_angle: f32,
     pub angle_of_attack: f32,
+    pub display_aero_forces: bool,
 }
 
 //https://www.grc.nasa.gov/www/k-12/BGP/Donna/t_w_ratio_answers.htm
@@ -46,6 +47,7 @@ impl Default for MovementSettings {
             flaps_enabled: true,
             flaps_angle: 0.2,
             angle_of_attack: 0.0,
+            display_aero_forces: true,
         }
     }
 }
@@ -141,7 +143,7 @@ fn player_movement(
             let angle_of_attack = settings.angle_of_attack;
 
             //scale to apply to drag coeff when aoa is high
-            let drag_coeff_scale = 2.;
+            let drag_coeff_scale = 1.2;
 
             //scale to artificially scale lift force
             let lift_bias = 1.2;
@@ -253,14 +255,19 @@ fn player_movement(
             let dir = -cur_velocity.normalize_or_zero();
             let normal = player_transform.compute_affine().transform_vector3(temp_lift_direction).normalize_or_zero();
 
-            gizmos.arrow(player_transform.translation, player_transform.translation + normal * 50., Color::GREEN);
 
             settings.lift_direction = (dir - 2. * Vec3::dot(dir, normal) * normal).normalize_or_zero();
             settings.angle_of_attack = normal.dot(dir).max(0.0);
 
-            gizmos.arrow(player_transform.translation, player_transform.translation + settings.lift_direction * 50., Color::RED);
-            gizmos.arrow(player_transform.translation, player_transform.translation + dir * 50., Color::BLUE);
+            if keys.just_pressed(KeyCode::KeyG) {
+                settings.display_aero_forces = !settings.display_aero_forces;
+            }
 
+            if settings.display_aero_forces {
+                gizmos.arrow(player_transform.translation, player_transform.translation + normal * 50., Color::GREEN);
+                gizmos.arrow(player_transform.translation, player_transform.translation + settings.lift_direction * 50., Color::RED);
+                gizmos.arrow(player_transform.translation, player_transform.translation + dir * 50., Color::BLUE);
+            }
         }
         
     }
