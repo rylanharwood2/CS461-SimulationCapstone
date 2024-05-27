@@ -18,11 +18,11 @@ https://developers.nextzen.org/
 
 ## Tutorial
 1. Type "cargo run" while in the clone directory containing the cargo.toml file
-2. Click on the play button in the cetner of the menu screen
+2. Click on the play button in the center of the menu screen
 
 ## Controls
 1. Pitch controls: W/S
-2. ROLL left/right: Q/E
+2. Roll left/right: Q/E
 3. Thrust strength: left shift/left ctrl
 4. Enable flaps: F
 5. Flap controls: arrow keys
