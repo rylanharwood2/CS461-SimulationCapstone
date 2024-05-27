@@ -15,6 +15,22 @@ https://developers.nextzen.org/
 8. Done
 9. WARNING: The ".env" file should NEVER be pushed onto the repository
 
+
+## Tutorial
+1. Type "cargo run" while in the clone directory containing the cargo.toml file
+2. Click on the play button in the cetner of the menu screen
+
+## Controls
+1. Pitch controls: W/S
+2. ROLL left/right: Q/E
+3. Thrust strength: left shift/left ctrl
+4. Enable flaps: F
+5. Flap controls: arrow keys
+6. Lock cursor: space
+7. Pause: ESC
+8. Camera control: mouse/scroll wheel
+9. Enable Directional arrows: G
+   
 ## Project Structure                
 
 ```text
