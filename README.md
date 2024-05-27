@@ -30,7 +30,21 @@ https://developers.nextzen.org/
 7. Pause: ESC
 8. Camera control: mouse/scroll wheel
 9. Enable Directional arrows: G
-   
+
+# Future Project Plans
+1. Flesh out UI
+   - Text fonts, visuals, and background in start menu
+   - visual pause UI when pressing escape
+
+2. Physics
+   - Make physics more realistic, primarily the lift force
+   - Give the plane a hitbox and add collisions
+
+3. Customization
+   - Allow support for changing between different plane models
+   - Allow customizable physics osetttings
+   - Allow users to change keybinds
+     
 ## Project Structure                
 
 ```text
