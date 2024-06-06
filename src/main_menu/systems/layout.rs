@@ -41,9 +41,8 @@ pub fn build_main_menu(commands: &mut Commands, asset_server: &Res<AssetServer>)
 
         parent.spawn(TextBundle {
             style: Style {
-                position_type: PositionType::Absolute,
-                bottom: Val::Px(500.0),
-                left: Val::Px(500.0),
+                position_type: PositionType::Relative,
+                align_items: AlignItems::Center,
                 
                 ..default()
             },
@@ -52,7 +51,7 @@ pub fn build_main_menu(commands: &mut Commands, asset_server: &Res<AssetServer>)
                     "Xtreme Flight Simulator",
                     get_button_text_style(&asset_server),
                     )],
-                    justify: JustifyText::Center,
+                    justify: JustifyText::Left,
                     
                     ..default()
                 },
