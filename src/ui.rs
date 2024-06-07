@@ -87,6 +87,7 @@ fn pause_update(
     mut pause: ResMut<PauseState>,
     mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
     mut tpc: Query<&mut ThirdPersonCamera>,
+    mut query: Query<&mut Text, With<InformationTextBox>>,
 ) {
     if pause.is_paused {
         let mut window = &mut primary_window.single_mut();
@@ -94,6 +95,13 @@ fn pause_update(
         window.cursor.grab_mode = CursorGrabMode::None;
         tpc.single_mut().cursor_lock_active = false;
         tpc.single_mut().cursor_lock_toggle_enabled = false;
+        for mut text in &mut query {
+            let output = format!(
+                "
+            Pause",
+            );
+            text.sections[0].value = output.to_string();
+        }
     } else {
         tpc.single_mut().cursor_lock_toggle_enabled = true;
     }
