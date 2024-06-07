@@ -110,8 +110,8 @@ fn player_movement(
                 player_transform.translation = Vec3::new(x, y, z);
             }
 
-            if player_transform.translation.y < 10.0 {
-                let y = 100.0 as f32;
+            if player_transform.translation.y < 2.5 {
+                let y = 1000.0 as f32;
                 player_transform.translation = Vec3::new(
                     player_transform.translation.x,
                     y,
