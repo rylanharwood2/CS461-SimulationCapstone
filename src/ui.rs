@@ -1,7 +1,7 @@
-use bevy::{prelude::*, window::CursorGrabMode};
-use bevy_third_person_camera::ThirdPersonCamera;
 use crate::player::MovementSettings;
 use bevy::window::PrimaryWindow;
+use bevy::{prelude::*, window::CursorGrabMode};
+use bevy_third_person_camera::ThirdPersonCamera;
 // A unit struct to help identify the FPS UI component, since there may be many Text components
 #[derive(Component)]
 struct InformationTextBox;
@@ -13,9 +13,7 @@ pub struct PauseState {
 }
 impl Default for PauseState {
     fn default() -> Self {
-        Self {
-            is_paused: true,
-        }
+        Self { is_paused: true }
     }
 }
 
@@ -29,7 +27,6 @@ impl Plugin for UiPlugin {
 }
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
-
     // Text with one section
     commands.spawn((
         // Create a TextBundle that has a Text with a single section.
@@ -64,13 +61,23 @@ fn text_update_system(
         let current_force = player.thrust_force;
         let percent_force = ((current_force / player.thrust_force_max) * 100.) as i32;
         let speed = f32::round(player.velocity.length());
-        
-        let output = format!("
+
+        let output = format!(
+            "
             Throttle {}\n
             Speed(m/s) {}\n
             Flaps {}\n
-            Flaps Angle {}\n", 
-        percent_force, speed, player.flaps_enabled, player.flaps_angle * 180.0 / 3.14);
+            Flaps Angle {}\n
+            Angle Up/Down: W / S
+            Roll Angle: Q / E
+            Flaps Angle Control: Arrows
+            Pause: Escape
+            Throttle: LShift / Ctrl",
+            percent_force,
+            speed,
+            player.flaps_enabled,
+            player.flaps_angle * 180.0 / 3.14
+        );
 
         text.sections[0].value = output.to_string();
     }
@@ -80,23 +87,21 @@ fn pause_update(
     mut pause: ResMut<PauseState>,
     mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
     mut tpc: Query<&mut ThirdPersonCamera>,
-){
+) {
     if pause.is_paused {
         let mut window = &mut primary_window.single_mut();
         window.cursor.visible = true;
         window.cursor.grab_mode = CursorGrabMode::None;
         tpc.single_mut().cursor_lock_active = false;
         tpc.single_mut().cursor_lock_toggle_enabled = false;
-    }
-    else{
+    } else {
         tpc.single_mut().cursor_lock_toggle_enabled = true;
     }
 
-    if keys.just_pressed(KeyCode::Escape){
+    if keys.just_pressed(KeyCode::Escape) {
         if pause.is_paused == false {
             pause.is_paused = true;
-        }
-        else {
+        } else {
             pause.is_paused = false;
             tpc.single_mut().cursor_lock_active = true;
         }
